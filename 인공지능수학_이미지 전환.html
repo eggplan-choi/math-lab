@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>인공지능 수학 - 컬러 이미지 오버랩 전환 (볼록 결합 & 선형 보간)</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f8fafc',
+              100: '#f1f5f9',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- KaTeX for Mathematical Formulas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    
+    .matrix-input::-webkit-outer-spin-button,
+    .matrix-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .matrix-input {
+      -moz-appearance: textfield;
+    }
+    
+    .pixel-canvas {
+      image-rendering: pixelated;
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 0.9; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.02); }
+    }
+    .playing-glow {
+      animation: pulseGlow 1.5s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-[1700px] mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-rose-500 flex items-center justify-center text-white font-bold shadow-sm text-sm">
+          $(1-\alpha)\mathbf{A}+\alpha\mathbf{B}$
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold text-slate-900 leading-tight">인공지능 수학 : 이미지($5 \times 5$) 오버랩 전환과 볼록 결합(Convex Combination)</h1>
+          <p class="text-xs text-slate-500">선형 보간(Linear Interpolation) $\mathbf{C}_{i,j} = \text{round}((1-\alpha)\mathbf{A}_{i,j} + \alpha\mathbf{B}_{i,j})$ 탐구</p>
+        </div>
+      </div>
+
+      <!-- Preset Controls -->
+      <div class="flex items-center space-x-1.5">
+        <button onclick="loadPresetPair('heart-to-flower')" class="px-2.5 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 shadow-sm transition">💖 하트 $\to$ 🌸 꽃</button>
+        <button onclick="loadPresetPair('sunset-to-night')" class="px-2.5 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 shadow-sm transition">🌅 석양 $\to$ 🌌 밤하늘</button>
+        <button onclick="loadPresetPair('apple-to-orange')" class="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 shadow-sm transition">🍏 사과 $\to$ 🍊 오렌지</button>
+        <button onclick="resetAllMatrices()" class="px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-rose-50 hover:text-rose-600 shadow-sm transition">🔄 초기화</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main 3-Column Layout -->
+  <main class="max-w-[1700px] mx-auto px-4 sm:px-6 py-4 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+    <!-- [COLUMN 1: Left] Alpha Blending & Auto-Play Controller (3 Cols) -->
+    <section class="lg:col-span-3 flex flex-col space-y-4">
+      
+      <!-- Master Alpha Controller Card -->
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+          <div class="flex items-center space-x-2">
+            <span class="text-base">🎚️</span>
+            <h2 class="text-sm font-bold text-slate-800">오버랩 비율 ($\alpha$) 제어</h2>
+          </div>
+          <span id="badge-alpha-val" class="text-xs font-mono font-bold px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-md border border-indigo-200">$\alpha = 0.50$</span>
+        </div>
+
+        <!-- Alpha Slider & Dynamic Gradient Bar -->
+        <div class="space-y-2.5 bg-indigo-50/50 p-3.5 rounded-xl border border-indigo-100">
+          <div class="flex items-center justify-between text-xs font-semibold">
+            <span class="text-rose-600 font-bold">이미지 A ($1-\alpha = <span id="text-weight-a">0.50</span>$)</span>
+            <span class="text-purple-600 font-bold">이미지 B ($\alpha = <span id="text-weight-b">0.50</span>$)</span>
+          </div>
+
+          <!-- Dual Weight Progress Bar -->
+          <div class="w-full h-3 bg-slate-200 rounded-full overflow-hidden flex border border-slate-300">
+            <div id="bar-weight-a" class="bg-gradient-to-r from-rose-500 to-rose-400 h-full transition-all duration-75" style="width: 50%;"></div>
+            <div id="bar-weight-b" class="bg-gradient-to-r from-purple-500 to-indigo-500 h-full transition-all duration-75" style="width: 50%;"></div>
+          </div>
+
+          <!-- Slider Range -->
+          <input type="range" id="slider-alpha" min="0" max="1000" step="5" value="500" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+
+          <!-- Quick Value Preset Buttons -->
+          <div class="grid grid-cols-5 gap-1 pt-1">
+            <button onclick="setAlpha(0.00)" class="py-1 text-[11px] font-semibold bg-white border border-slate-200 rounded-lg hover:bg-rose-50 hover:text-rose-700 text-slate-700 shadow-sm transition">0.0 (A)</button>
+            <button onclick="setAlpha(0.25)" class="py-1 text-[11px] font-semibold bg-white border border-slate-200 rounded-lg hover:bg-indigo-50 text-slate-700 shadow-sm transition">0.25</button>
+            <button onclick="setAlpha(0.50)" class="py-1 text-[11px] font-semibold bg-white border border-indigo-300 rounded-lg bg-indigo-50 text-indigo-700 shadow-sm transition">0.50</button>
+            <button onclick="setAlpha(0.75)" class="py-1 text-[11px] font-semibold bg-white border border-slate-200 rounded-lg hover:bg-indigo-50 text-slate-700 shadow-sm transition">0.75</button>
+            <button onclick="setAlpha(1.00)" class="py-1 text-[11px] font-semibold bg-white border border-slate-200 rounded-lg hover:bg-purple-50 hover:text-purple-700 text-slate-700 shadow-sm transition">1.0 (B)</button>
+          </div>
+        </div>
+
+        <!-- Auto-Play Animation Controller -->
+        <div class="bg-slate-900 text-white p-3.5 rounded-xl shadow-sm space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <span class="text-amber-400 text-sm">▶️</span>
+              <span class="text-xs font-bold text-slate-200">자동 전환 재생 (Animation)</span>
+            </div>
+            <span id="play-status-badge" class="text-[10px] font-mono px-2 py-0.5 bg-slate-800 text-slate-400 rounded border border-slate-700">정지됨</span>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <button id="btn-toggle-play" onclick="toggleAutoPlay()" class="flex-1 py-2 px-3 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 active:scale-95 rounded-lg shadow-sm transition flex items-center justify-center space-x-1.5">
+              <span id="play-btn-icon">▶️</span>
+              <span id="play-btn-text">자동 재생 시작</span>
+            </button>
+            <button onclick="resetPlayback()" class="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 text-xs border border-slate-700 transition" title="처음으로 되감기">
+              ⏮️
+            </button>
+          </div>
+
+          <!-- Playback Speed Control -->
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+            <span>재생 속도:</span>
+            <div class="flex space-x-1" id="speed-buttons">
+              <button onclick="setPlaybackSpeed(0.5)" data-speed="0.5" class="speed-btn px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300">0.5x</button>
+              <button onclick="setPlaybackSpeed(1.0)" data-speed="1.0" class="speed-btn px-2 py-0.5 rounded bg-indigo-500 font-bold text-white">1.0x</button>
+              <button onclick="setPlaybackSpeed(2.0)" data-speed="2.0" class="speed-btn px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300">2.0x</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Selected Pixel Color Inspector (A + B = C) -->
+        <div class="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 flex flex-col space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-indigo-900">선택 픽셀 블렌딩 색상 비교</span>
+            <span id="selected-pixel-coords" class="text-[11px] font-mono text-indigo-700 font-bold">(1, 1)</span>
+          </div>
+          <div class="grid grid-cols-3 gap-1.5 text-center">
+            <div class="bg-white p-1.5 rounded-lg border border-rose-100 shadow-sm flex flex-col items-center">
+              <span class="text-[9px] text-rose-600 font-bold mb-0.5">이미지 $\mathbf{A}$</span>
+              <div id="preview-pixel-a" class="w-8 h-8 rounded border border-slate-200 shadow-inner"></div>
+              <span id="text-pixel-a" class="text-[9px] font-mono font-bold mt-1 text-slate-700">(0,0,0)</span>
+            </div>
+            <div class="bg-white p-1.5 rounded-lg border border-purple-100 shadow-sm flex flex-col items-center">
+              <span class="text-[9px] text-purple-600 font-bold mb-0.5">이미지 $\mathbf{B}$</span>
+              <div id="preview-pixel-b" class="w-8 h-8 rounded border border-slate-200 shadow-inner"></div>
+              <span id="text-pixel-b" class="text-[9px] font-mono font-bold mt-1 text-slate-700">(0,0,0)</span>
+            </div>
+            <div class="bg-white p-1.5 rounded-lg border border-indigo-200 shadow-sm flex flex-col items-center">
+              <span class="text-[9px] text-indigo-700 font-bold mb-0.5">결과 $\mathbf{C}$</span>
+              <div id="preview-pixel-c" class="w-8 h-8 rounded border border-slate-200 shadow-inner"></div>
+              <span id="text-pixel-c" class="text-[9px] font-mono font-bold mt-1 text-indigo-900">(0,0,0)</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- AI Math Guide Note -->
+      <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-2xl shadow-sm space-y-2">
+        <div class="flex items-center space-x-2">
+          <span class="text-indigo-400 font-bold text-sm">💡 AI 수학 개념: 볼록 결합 (Convex Combination)</span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          두 벡터 $\mathbf{A}, \mathbf{B}$에 대하여 가중치의 합이 $1$이고 음수가 아닐 때($(1-\alpha) + \alpha = 1, \; 0 \le \alpha \le 1$),
+          $$\mathbf{C} = (1-\alpha)\mathbf{A} + \alpha\mathbf{B}$$
+          를 <strong class="text-indigo-300">볼록 결합</strong> 또는 <strong class="text-amber-300">선형 보간(Lerp, Alpha Blending)</strong>이라 부릅니다. 인공지능 이미지 생성 모델(GAN, Diffusion)에서 잠재 공간(Latent Space)의 두 벡터 사이를 모핑(Morphing)할 때 사용하는 핵심 원리입니다.
+        </p>
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 2: Center] 5x5 Matrices of A, B, and Blended C (5.5 Cols) -->
+    <section class="lg:col-span-5 flex flex-col space-y-3">
+      
+      <!-- Channel Selector Tabs -->
+      <div class="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
+          <button id="tab-btn-all" onclick="switchChannelView('all')" class="ch-tab-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white shadow text-slate-900">RGB 3채널 전체</button>
+          <button id="tab-btn-r" onclick="switchChannelView('r')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-rose-600 hover:bg-white/60">Red ($\mathbf{R}$)</button>
+          <button id="tab-btn-g" onclick="switchChannelView('g')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-emerald-600 hover:bg-white/60">Green ($\mathbf{G}$)</button>
+          <button id="tab-btn-b" onclick="switchChannelView('b')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-sky-600 hover:bg-white/60">Blue ($\mathbf{B}$)</button>
+        </div>
+
+        <div class="text-[11px] text-slate-400 font-medium">
+          크기: <span class="font-bold text-indigo-600">5 × 5 고정 실습</span>
+        </div>
+      </div>
+
+      <!-- Matrices Scroll Area -->
+      <div id="matrices-wrapper" class="space-y-4 flex-1 overflow-y-auto max-h-[calc(100vh-140px)] pr-1">
+        
+        <!-- RED CHANNEL BLOCK -->
+        <div id="block-channel-r" class="bg-white rounded-2xl border border-rose-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-rose-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-rose-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-rose-900">Red 채널 연산 : $\mathbf{C}_R = \text{round}((1-\alpha)\mathbf{A}_R + \alpha\mathbf{B}_R)$</h2>
+            </div>
+            <span class="text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">빨강</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-center items-center">
+            <!-- Matrix A_R -->
+            <div class="bg-rose-50/40 p-2 rounded-xl border border-rose-100">
+              <div class="text-[11px] font-bold text-rose-900 mb-1.5">$\mathbf{A}_R$ (이미지 A)</div>
+              <div id="grid-a-r" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix B_R -->
+            <div class="bg-purple-50/40 p-2 rounded-xl border border-purple-100">
+              <div class="text-[11px] font-bold text-purple-900 mb-1.5">$\mathbf{B}_R$ (이미지 B)</div>
+              <div id="grid-b-r" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix C_R -->
+            <div class="bg-indigo-50/60 p-2 rounded-xl border border-indigo-200">
+              <div class="text-[11px] font-bold text-indigo-950 mb-1.5">$\mathbf{C}_R$ (오버랩 결과)</div>
+              <div id="grid-c-r" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GREEN CHANNEL BLOCK -->
+        <div id="block-channel-g" class="bg-white rounded-2xl border border-emerald-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-emerald-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-emerald-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-emerald-900">Green 채널 연산 : $\mathbf{C}_G = \text{round}((1-\alpha)\mathbf{A}_G + \alpha\mathbf{B}_G)$</h2>
+            </div>
+            <span class="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">초록</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-center items-center">
+            <!-- Matrix A_G -->
+            <div class="bg-emerald-50/40 p-2 rounded-xl border border-emerald-100">
+              <div class="text-[11px] font-bold text-emerald-900 mb-1.5">$\mathbf{A}_G$ (이미지 A)</div>
+              <div id="grid-a-g" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix B_G -->
+            <div class="bg-purple-50/40 p-2 rounded-xl border border-purple-100">
+              <div class="text-[11px] font-bold text-purple-900 mb-1.5">$\mathbf{B}_G$ (이미지 B)</div>
+              <div id="grid-b-g" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix C_G -->
+            <div class="bg-indigo-50/60 p-2 rounded-xl border border-indigo-200">
+              <div class="text-[11px] font-bold text-indigo-950 mb-1.5">$\mathbf{C}_G$ (오버랩 결과)</div>
+              <div id="grid-c-g" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BLUE CHANNEL BLOCK -->
+        <div id="block-channel-b" class="bg-white rounded-2xl border border-sky-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-sky-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-sky-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-sky-900">Blue 채널 연산 : $\mathbf{C}_B = \text{round}((1-\alpha)\mathbf{A}_B + \alpha\mathbf{B}_B)$</h2>
+            </div>
+            <span class="text-[11px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded">파랑</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-center items-center">
+            <!-- Matrix A_B -->
+            <div class="bg-sky-50/40 p-2 rounded-xl border border-sky-100">
+              <div class="text-[11px] font-bold text-sky-900 mb-1.5">$\mathbf{A}_B$ (이미지 A)</div>
+              <div id="grid-a-b" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix B_B -->
+            <div class="bg-purple-50/40 p-2 rounded-xl border border-purple-100">
+              <div class="text-[11px] font-bold text-purple-900 mb-1.5">$\mathbf{B}_B$ (이미지 B)</div>
+              <div id="grid-b-b" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix C_B -->
+            <div class="bg-indigo-50/60 p-2 rounded-xl border border-indigo-200">
+              <div class="text-[11px] font-bold text-indigo-950 mb-1.5">$\mathbf{C}_B$ (오버랩 결과)</div>
+              <div id="grid-c-b" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 3: Right] Triple Rendered Canvases & KaTeX Interpolation Inspector (3.5 Cols) -->
+    <section class="lg:col-span-4 flex flex-col space-y-4">
+
+      <!-- Rendered Transition Display Card -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-slate-700"></span>
+            <h2 class="text-sm font-bold text-slate-800">이미지 모핑 & 블렌딩 뷰</h2>
+          </div>
+          <button onclick="exportAllMatricesCSV()" class="text-xs px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-medium rounded-lg border border-slate-200 shadow-sm transition">
+            📊 CSV 복사
+          </button>
+        </div>
+
+        <div class="p-4 flex flex-col items-center justify-center bg-slate-100/50 space-y-3">
+          
+          <!-- Large Main Blended Canvas (C) -->
+          <div class="flex flex-col items-center bg-white p-3 rounded-2xl border-2 border-indigo-400 shadow-md w-full">
+            <div class="flex items-center justify-between w-full mb-1.5 px-2">
+              <span class="text-xs font-bold text-indigo-900">최종 블렌딩 이미지 $\mathbf{C}$</span>
+              <span id="canvas-c-alpha-badge" class="text-[10px] font-mono font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">$\alpha = 0.50$</span>
+            </div>
+            <canvas id="canvas-c" width="180" height="180" class="pixel-canvas rounded-xl w-[150px] h-[150px] sm:w-[170px] sm:h-[170px] border border-slate-200 cursor-pointer bg-white shadow-inner"></canvas>
+          </div>
+
+          <!-- Small Input Canvases Comparison (A and B) -->
+          <div class="grid grid-cols-2 gap-2.5 w-full">
+            <!-- Canvas A -->
+            <div class="flex flex-col items-center bg-white p-2 rounded-xl border border-rose-200 shadow-sm">
+              <span class="text-[10px] font-bold text-rose-700 mb-1">이미지 $\mathbf{A}$ ($1-\alpha$)</span>
+              <canvas id="canvas-a" width="100" height="100" class="pixel-canvas rounded-lg w-[85px] h-[85px] border border-slate-200 cursor-pointer bg-white"></canvas>
+            </div>
+
+            <!-- Canvas B -->
+            <div class="flex flex-col items-center bg-white p-2 rounded-xl border border-purple-200 shadow-sm">
+              <span class="text-[10px] font-bold text-purple-700 mb-1">이미지 $\mathbf{B}$ ($\alpha$)</span>
+              <canvas id="canvas-b" width="100" height="100" class="pixel-canvas rounded-lg w-[85px] h-[85px] border border-slate-200 cursor-pointer bg-white"></canvas>
+            </div>
+          </div>
+
+          <p class="text-[11px] text-slate-400 text-center leading-tight">💡 캔버스의 특정 화소를 클릭하면 해당 위치의 벡터 볼록 결합 수식이 아래에 표시됩니다.</p>
+        </div>
+
+        <!-- Selected Pixel Interpolation Formula Inspector -->
+        <div class="p-4 border-t border-slate-100 bg-white">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-slate-700">선택 픽셀 볼록 결합 수식</span>
+            <span id="selected-coord-text" class="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded text-slate-600">좌표 $(i=1, j=1)$</span>
+          </div>
+          <div id="pixel-math-formula" class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center text-xs sm:text-sm font-mono overflow-x-auto min-h-[90px] flex items-center justify-center">
+            <!-- KaTeX Formula dynamically injected -->
+          </div>
+        </div>
+
+        <!-- Dominance Metric Status -->
+        <div class="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px]">
+          <span class="text-slate-500 font-medium">현재 블렌딩 상태:</span>
+          <div class="flex items-center space-x-1.5 font-mono font-bold">
+            <span id="stat-blend-status" class="text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">균등 혼합 (50% : 50%)</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 flex items-center space-x-2 pointer-events-none">
+    <span id="toast-icon">✨</span>
+    <span id="toast-message">알림</span>
+  </div>
+
+  <!-- JavaScript Logic -->
+  <script>
+    const GRID_SIZE = 5;
+    let selectedPixel = { r: 0, c: 0 };
+    
+    // Alpha parameter (0.00 ~ 1.00)
+    let alpha = 0.50;
+
+    // Auto-Play Animation State
+    let isPlaying = false;
+    let playDirection = 1; // 1: 0->1 (A->B), -1: 1->0 (B->A)
+    let playSpeed = 1.0;
+    let animationFrameId = null;
+    let lastTimestamp = null;
+
+    // Tensor A: Image A RGB 5x5 matrices (0 ~ 255)
+    let matrixA_R = [];
+    let matrixA_G = [];
+    let matrixA_B = [];
+
+    // Tensor B: Image B RGB 5x5 matrices (0 ~ 255)
+    let matrixB_R = [];
+    let matrixB_G = [];
+    let matrixB_B = [];
+
+    // Tensor C: Result Image C RGB 5x5 matrices = round((1 - alpha)*A + alpha*B)
+    let matrixC_R = [];
+    let matrixC_G = [];
+    let matrixC_B = [];
+
+    // Preset Pairs Generator
+    function getPresetPairData(pairName) {
+      const A_R = Array(5).fill(0).map(() => Array(5).fill(0));
+      const A_G = Array(5).fill(0).map(() => Array(5).fill(0));
+      const A_B = Array(5).fill(0).map(() => Array(5).fill(0));
+
+      const B_R = Array(5).fill(0).map(() => Array(5).fill(0));
+      const B_G = Array(5).fill(0).map(() => Array(5).fill(0));
+      const B_B = Array(5).fill(0).map(() => Array(5).fill(0));
+
+      if (pairName === 'heart-to-flower') {
+        // Image A: Heart (Red/Pink)
+        const heartMask = [
+          [0, 1, 0, 1, 0],
+          [1, 1, 1, 1, 1],
+          [1, 1, 1, 1, 1],
+          [0, 1, 1, 1, 0],
+          [0, 0, 1, 0, 0]
+        ];
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (heartMask[r][c] === 1) {
+              A_R[r][c] = (r === 2 && c === 2) ? 255 : 220;
+              A_G[r][c] = (r === 2 && c === 2) ? 60 : 30;
+              A_B[r][c] = (r === 2 && c === 2) ? 100 : 70;
+            } else {
+              A_R[r][c] = 25; A_G[r][c] = 20; A_B[r][c] = 35;
+            }
+          }
+        }
+
+        // Image B: Flower (Yellow Center, Cyan/Blue Petals, Green leaves)
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (r === 2 && c === 2) {
+              B_R[r][c] = 250; B_G[r][c] = 210; B_B[r][c] = 40; // Core
+            } else if ((r === 1 || r === 3) && c === 2 || (c === 1 || c === 3) && r === 2) {
+              B_R[r][c] = 50; B_G[r][c] = 200; B_B[r][c] = 240; // Petals
+            } else {
+              B_R[r][c] = 30; B_G[r][c] = 130; B_B[r][c] = 60; // Leaves
+            }
+          }
+        }
+      } else if (pairName === 'sunset-to-night') {
+        // Image A: Warm Sunset
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            A_R[r][c] = Math.max(30, 240 - r * 45);
+            A_G[r][c] = Math.max(20, 130 - r * 25 + c * 5);
+            A_B[r][c] = Math.min(220, 40 + r * 35);
+          }
+        }
+        // Image B: Starry Night Sky
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if ((r === 0 && c === 4) || (r === 1 && c === 1) || (r === 3 && c === 3)) {
+              B_R[r][c] = 240; B_G[r][c] = 240; B_B[r][c] = 255; // Stars
+            } else {
+              B_R[r][c] = Math.min(40, 10 + r * 5);
+              B_G[r][c] = Math.min(60, 20 + r * 8);
+              B_B[r][c] = Math.min(180, 90 + r * 18);
+            }
+          }
+        }
+      } else if (pairName === 'apple-to-orange') {
+        // Image A: Green Apple
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (r === 0 && c === 2) {
+              A_R[r][c] = 120; A_G[r][c] = 70; A_B[r][c] = 30; // Stem
+            } else if ((r >= 1 && r <= 3) && (c >= 1 && c <= 3)) {
+              A_R[r][c] = 70; A_G[r][c] = 210; A_B[r][c] = 40; // Apple body
+            } else {
+              A_R[r][c] = 240; A_G[r][c] = 240; A_B[r][c] = 240;
+            }
+          }
+        }
+        // Image B: Orange
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if ((r >= 1 && r <= 3) && (c >= 1 && c <= 3)) {
+              B_R[r][c] = 255; B_G[r][c] = 130; B_B[r][c] = 10; // Orange body
+            } else {
+              B_R[r][c] = 20; B_G[r][c] = 20; B_B[r][c] = 30;
+            }
+          }
+        }
+      }
+
+      return { A: { R: A_R, G: A_G, B: A_B }, B: { R: B_R, G: B_G, B: B_B } };
+    }
+
+    function initData() {
+      const preset = getPresetPairData('heart-to-flower');
+      matrixA_R = preset.A.R;
+      matrixA_G = preset.A.G;
+      matrixA_B = preset.A.B;
+
+      matrixB_R = preset.B.R;
+      matrixB_G = preset.B.G;
+      matrixB_B = preset.B.B;
+
+      recalculateMatrixC();
+    }
+
+    // Recalculate Tensor C = round((1 - alpha)*A + alpha*B)
+    function recalculateMatrixC() {
+      matrixC_R = Array(5).fill(0).map(() => Array(5).fill(0));
+      matrixC_G = Array(5).fill(0).map(() => Array(5).fill(0));
+      matrixC_B = Array(5).fill(0).map(() => Array(5).fill(0));
+
+      const weightA = 1.0 - alpha;
+      const weightB = alpha;
+
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const rawR = Math.round(weightA * (matrixA_R[r][c] || 0) + weightB * (matrixB_R[r][c] || 0));
+          const rawG = Math.round(weightA * (matrixA_G[r][c] || 0) + weightB * (matrixB_G[r][c] || 0));
+          const rawB = Math.round(weightA * (matrixA_B[r][c] || 0) + weightB * (matrixB_B[r][c] || 0));
+
+          matrixC_R[r][c] = Math.max(0, Math.min(255, rawR));
+          matrixC_G[r][c] = Math.max(0, Math.min(255, rawG));
+          matrixC_B[r][c] = Math.max(0, Math.min(255, rawB));
+        }
+      }
+
+      // Update Dominance status text
+      const pctA = Math.round(weightA * 100);
+      const pctB = Math.round(weightB * 100);
+      const statElem = document.getElementById('stat-blend-status');
+      if (pctA > pctB) {
+        statElem.innerText = `이미지 A 지배적 (${pctA}% : ${pctB}%)`;
+      } else if (pctB > pctA) {
+        statElem.innerText = `이미지 B 지배적 (${pctA}% : ${pctB}%)`;
+      } else {
+        statElem.innerText = `균등 혼합 (50% : 50%)`;
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initData();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      setupEventListeners();
+
+      if (window.renderMathInElement) {
+        renderMathInElement(document.body, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false}
+          ]
+        });
+      }
+    });
+
+    function setupEventListeners() {
+      // Alpha Slider
+      const sliderAlpha = document.getElementById('slider-alpha');
+      sliderAlpha.addEventListener('input', (e) => {
+        if (isPlaying) stopAutoPlay();
+        const val = parseFloat((parseInt(e.target.value, 10) / 1000).toFixed(2));
+        setAlpha(val, false);
+      });
+
+      // Canvas Clicks
+      const canvasA = document.getElementById('canvas-a');
+      const canvasB = document.getElementById('canvas-b');
+      const canvasC = document.getElementById('canvas-c');
+
+      const handleCanvasClick = (canvas, e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const col = Math.floor(((e.clientX - rect.left) * scaleX) / (canvas.width / 5));
+        const row = Math.floor(((e.clientY - rect.top) * scaleY) / (canvas.height / 5));
+
+        if (row >= 0 && row < 5 && col >= 0 && col < 5) {
+          selectedPixel = { r: row, c: col };
+          updateSelectedPixelInspector();
+          highlightSelectedCell();
+        }
+      };
+
+      canvasA.addEventListener('click', (e) => handleCanvasClick(canvasA, e));
+      canvasB.addEventListener('click', (e) => handleCanvasClick(canvasB, e));
+      canvasC.addEventListener('click', (e) => handleCanvasClick(canvasC, e));
+    }
+
+    function setAlpha(val, notify = true) {
+      alpha = Math.max(0.0, Math.min(1.0, val));
+      const alphaFormatted = alpha.toFixed(2);
+      const weightA = (1.0 - alpha).toFixed(2);
+      const weightB = alphaFormatted;
+
+      // Update Slider and badges
+      document.getElementById('slider-alpha').value = Math.round(alpha * 1000);
+      document.getElementById('text-weight-a').innerText = weightA;
+      document.getElementById('text-weight-b').innerText = weightB;
+      
+      const badgeAlpha = document.getElementById('badge-alpha-val');
+      badgeAlpha.innerHTML = `$\\alpha = ${alphaFormatted}$`;
+
+      const canvasBadge = document.getElementById('canvas-c-alpha-badge');
+      canvasBadge.innerHTML = `$\\alpha = ${alphaFormatted}$`;
+
+      // Update Progress Bar
+      document.getElementById('bar-weight-a').style.width = `${(1.0 - alpha) * 100}%`;
+      document.getElementById('bar-weight-b').style.width = `${alpha * 100}%`;
+
+      if (window.renderMathInElement) {
+        renderMathInElement(badgeAlpha, { delimiters: [{left: '$', right: '$', display: false}] });
+        renderMathInElement(canvasBadge, { delimiters: [{left: '$', right: '$', display: false}] });
+      }
+
+      recalculateMatrixC();
+      updateResultGridDOM();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+
+      if (notify) showToast(`블렌딩 비율이 α = ${alphaFormatted}로 설정되었습니다.`);
+    }
+
+    // Smooth Auto-Play Loop using requestAnimationFrame
+    function toggleAutoPlay() {
+      if (isPlaying) {
+        stopAutoPlay();
+      } else {
+        startAutoPlay();
+      }
+    }
+
+    function startAutoPlay() {
+      isPlaying = true;
+      lastTimestamp = null;
+      document.getElementById('play-btn-icon').innerText = '⏸️';
+      document.getElementById('play-btn-text').innerText = '일시 정지';
+      document.getElementById('play-status-badge').innerText = '재생 중';
+      document.getElementById('play-status-badge').className = 'text-[10px] font-mono px-2 py-0.5 bg-emerald-900/80 text-emerald-300 rounded border border-emerald-600 playing-glow';
+      
+      animationFrameId = requestAnimationFrame(autoPlayStep);
+      showToast('▶️ 이미지 오버랩 자동 전환 애니메이션을 시작합니다.');
+    }
+
+    function stopAutoPlay() {
+      isPlaying = false;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      document.getElementById('play-btn-icon').innerText = '▶️';
+      document.getElementById('play-btn-text').innerText = '자동 재생 시작';
+      document.getElementById('play-status-badge').innerText = '정지됨';
+      document.getElementById('play-status-badge').className = 'text-[10px] font-mono px-2 py-0.5 bg-slate-800 text-slate-400 rounded border border-slate-700';
+    }
+
+    function resetPlayback() {
+      stopAutoPlay();
+      playDirection = 1;
+      setAlpha(0.0, false);
+      showToast('⏮️ 이미지 A (α = 0.0)로 되감았습니다.');
+    }
+
+    function setPlaybackSpeed(speed) {
+      playSpeed = speed;
+      document.querySelectorAll('.speed-btn').forEach(btn => {
+        const s = parseFloat(btn.getAttribute('data-speed'));
+        if (s === speed) {
+          btn.className = 'speed-btn px-2 py-0.5 rounded bg-indigo-500 font-bold text-white';
+        } else {
+          btn.className = 'speed-btn px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300';
+        }
+      });
+      showToast(`재생 속도가 ${speed}x로 변경되었습니다.`);
+    }
+
+    function autoPlayStep(timestamp) {
+      if (!isPlaying) return;
+
+      if (!lastTimestamp) lastTimestamp = timestamp;
+      const delta = (timestamp - lastTimestamp) / 1000; // seconds
+      lastTimestamp = timestamp;
+
+      // Base cycle: full transition takes ~ 2.5 seconds at 1.0x speed
+      const step = (delta / 2.5) * playSpeed * playDirection;
+      let nextAlpha = alpha + step;
+
+      if (nextAlpha >= 1.0) {
+        nextAlpha = 1.0;
+        playDirection = -1; // Reverse to A
+      } else if (nextAlpha <= 0.0) {
+        nextAlpha = 0.0;
+        playDirection = 1; // Forward to B
+      }
+
+      setAlpha(nextAlpha, false);
+      animationFrameId = requestAnimationFrame(autoPlayStep);
+    }
+
+    function renderAllGrids() {
+      renderSingleGrid('grid-a-r', matrixA_R, 'a-r', 'rose', false);
+      renderSingleGrid('grid-b-r', matrixB_R, 'b-r', 'purple', false);
+      renderSingleGrid('grid-c-r', matrixC_R, 'c-r', 'indigo', true);
+
+      renderSingleGrid('grid-a-g', matrixA_G, 'a-g', 'emerald', false);
+      renderSingleGrid('grid-b-g', matrixB_G, 'b-g', 'purple', false);
+      renderSingleGrid('grid-c-g', matrixC_G, 'c-g', 'indigo', true);
+
+      renderSingleGrid('grid-a-b', matrixA_B, 'a-b', 'sky', false);
+      renderSingleGrid('grid-b-b', matrixB_B, 'b-b', 'purple', false);
+      renderSingleGrid('grid-c-b', matrixC_B, 'c-b', 'indigo', true);
+
+      highlightSelectedCell();
+    }
+
+    function renderSingleGrid(containerId, matrix, tag, colorClass, isReadonly) {
+      const container = document.getElementById(containerId);
+      let html = '';
+
+      for (let r = 0; r < 5; r++) {
+        html += `<div class="flex gap-1 justify-center">`;
+        for (let c = 0; c < 5; c++) {
+          const val = matrix[r][c];
+          html += `
+            <input type="number" value="${val}"
+                   id="cell-${tag}-${r}-${c}"
+                   data-tag="${tag}" data-r="${r}" data-c="${c}"
+                   ${isReadonly ? 'readonly tabindex="-1"' : ''}
+                   onfocus="onCellFocus(${r}, ${c})"
+                   oninput="onCellInput(event, '${tag}', ${r}, ${c})"
+                   class="matrix-input w-8 h-7 text-[11px] text-center font-mono font-bold rounded border border-slate-200 focus:outline-none focus:ring-2 focus:ring-${colorClass}-500 ${isReadonly ? 'bg-indigo-900 text-white shadow-inner cursor-default' : (colorClass === 'rose' ? 'bg-rose-50/60 text-rose-900' : (colorClass === 'emerald' ? 'bg-emerald-50/60 text-emerald-900' : (colorClass === 'sky' ? 'bg-sky-50/60 text-sky-900' : 'bg-purple-50/60 text-purple-900')))} transition-all">
+          `;
+        }
+        html += `</div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function updateResultGridDOM() {
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const cellCR = document.getElementById(`cell-c-r-${r}-${c}`);
+          const cellCG = document.getElementById(`cell-c-g-${r}-${c}`);
+          const cellCB = document.getElementById(`cell-c-b-${r}-${c}`);
+          if (cellCR) cellCR.value = matrixC_R[r][c];
+          if (cellCG) cellCG.value = matrixC_G[r][c];
+          if (cellCB) cellCB.value = matrixC_B[r][c];
+        }
+      }
+    }
+
+    function onCellFocus(r, c) {
+      selectedPixel = { r, c };
+      updateSelectedPixelInspector();
+      highlightSelectedCell();
+    }
+
+    function onCellInput(event, tag, r, c) {
+      let rawVal = event.target.value;
+      let val = parseInt(rawVal, 10);
+      if (isNaN(val)) val = 0;
+      val = Math.max(0, Math.min(255, val));
+      event.target.value = val;
+
+      if (tag === 'a-r') matrixA_R[r][c] = val;
+      if (tag === 'a-g') matrixA_G[r][c] = val;
+      if (tag === 'a-b') matrixA_B[r][c] = val;
+
+      if (tag === 'b-r') matrixB_R[r][c] = val;
+      if (tag === 'b-g') matrixB_G[r][c] = val;
+      if (tag === 'b-b') matrixB_B[r][c] = val;
+
+      recalculateMatrixC();
+      updateResultGridDOM();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+    }
+
+    function highlightSelectedCell() {
+      document.querySelectorAll('.matrix-input').forEach(el => el.classList.remove('ring-2', 'ring-indigo-600', 'scale-105'));
+      const { r, c } = selectedPixel;
+      const tags = ['a-r', 'b-r', 'c-r', 'a-g', 'b-g', 'c-g', 'a-b', 'b-b', 'c-b'];
+      tags.forEach(tag => {
+        const el = document.getElementById(`cell-${tag}-${r}-${c}`);
+        if (el) {
+          el.classList.add('ring-2', 'ring-indigo-600', 'scale-105');
+        }
+      });
+    }
+
+    function updateAllCanvases() {
+      renderColorCanvas('canvas-a', matrixA_R, matrixA_G, matrixA_B);
+      renderColorCanvas('canvas-b', matrixB_R, matrixB_G, matrixB_B);
+      renderColorCanvas('canvas-c', matrixC_R, matrixC_G, matrixC_B);
+    }
+
+    function renderColorCanvas(canvasId, matR, matG, matB) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      const width = canvas.width;
+      const height = canvas.height;
+      const cellW = width / 5;
+      const cellH = height / 5;
+
+      ctx.clearRect(0, 0, width, height);
+
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const red = matR[r][c] || 0;
+          const green = matG[r][c] || 0;
+          const blue = matB[r][c] || 0;
+
+          ctx.fillStyle = `rgb(${red}, ${green}, ${blue})`;
+          ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+
+          // Grid lines
+          ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+        }
+      }
+    }
+
+    function updateSelectedPixelInspector() {
+      const { r, c } = selectedPixel;
+
+      const aR = matrixA_R[r][c] || 0, aG = matrixA_G[r][c] || 0, aB = matrixA_B[r][c] || 0;
+      const bR = matrixB_R[r][c] || 0, bG = matrixB_G[r][c] || 0, bB = matrixB_B[r][c] || 0;
+      const cR = matrixC_R[r][c] || 0, cG = matrixC_G[r][c] || 0, cB = matrixC_B[r][c] || 0;
+
+      // Update Left Sidebar Previews
+      document.getElementById('selected-pixel-coords').innerText = `(${r + 1}, ${c + 1})`;
+      document.getElementById('preview-pixel-a').style.backgroundColor = `rgb(${aR}, ${aG}, ${aB})`;
+      document.getElementById('preview-pixel-b').style.backgroundColor = `rgb(${bR}, ${bG}, ${bB})`;
+      document.getElementById('preview-pixel-c').style.backgroundColor = `rgb(${cR}, ${cG}, ${cB})`;
+
+      document.getElementById('text-pixel-a').innerText = `(${aR},${aG},${aB})`;
+      document.getElementById('text-pixel-b').innerText = `(${bR},${bG},${bB})`;
+      document.getElementById('text-pixel-c').innerText = `(${cR},${cG},${cB})`;
+
+      // Update Right Inspector KaTeX Formula
+      const coordBadge = document.getElementById('selected-coord-text');
+      coordBadge.innerHTML = `좌표 $(i=${r + 1}, j=${c + 1})$`;
+
+      const formulaBox = document.getElementById('pixel-math-formula');
+      
+      const weightA = (1.0 - alpha).toFixed(2);
+      const weightB = alpha.toFixed(2);
+
+      formulaBox.innerHTML = `$$\\mathbf{C}_{${r+1},${c+1}} = ${weightA}\\begin{bmatrix} ${aR} \\\\ ${aG} \\\\ ${aB} \\end{bmatrix} + ${weightB}\\begin{bmatrix} ${bR} \\\\ ${bG} \\\\ ${bB} \\end{bmatrix} = \\begin{bmatrix} ${cR} \\\\ ${cG} \\\\ ${cB} \\end{bmatrix}$$`;
+
+      if (window.renderMathInElement) {
+        renderMathInElement(coordBadge, { delimiters: [{left: '$', right: '$', display: false}] });
+        renderMathInElement(formulaBox, { delimiters: [{left: '$$', right: '$$', display: true}] });
+      }
+    }
+
+    function loadPresetPair(pairName) {
+      stopAutoPlay();
+      const preset = getPresetPairData(pairName);
+      matrixA_R = preset.A.R;
+      matrixA_G = preset.A.G;
+      matrixA_B = preset.A.B;
+
+      matrixB_R = preset.B.R;
+      matrixB_G = preset.B.G;
+      matrixB_B = preset.B.B;
+
+      setAlpha(0.50, false);
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      showToast('새로운 이미지 쌍 프리셋을 불러왔습니다.');
+    }
+
+    function resetAllMatrices() {
+      stopAutoPlay();
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          matrixA_R[r][c] = 0; matrixA_G[r][c] = 0; matrixA_B[r][c] = 0;
+          matrixB_R[r][c] = 0; matrixB_G[r][c] = 0; matrixB_B[r][c] = 0;
+        }
+      }
+      setAlpha(0.50, false);
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      showToast('모든 행렬 데이터가 0으로 초기화되었습니다.');
+    }
+
+    function switchChannelView(view) {
+      const blockR = document.getElementById('block-channel-r');
+      const blockG = document.getElementById('block-channel-g');
+      const blockB = document.getElementById('block-channel-b');
+
+      document.querySelectorAll('.ch-tab-btn').forEach(btn => {
+        btn.classList.remove('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+        btn.classList.add('text-slate-600');
+      });
+
+      if (view === 'all') {
+        blockR.classList.remove('hidden');
+        blockG.classList.remove('hidden');
+        blockB.classList.remove('hidden');
+        document.getElementById('tab-btn-all').classList.add('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+      } else if (view === 'r') {
+        blockR.classList.remove('hidden');
+        blockG.classList.add('hidden');
+        blockB.classList.add('hidden');
+        document.getElementById('tab-btn-r').classList.add('bg-white', 'shadow', 'text-rose-600', 'font-semibold');
+      } else if (view === 'g') {
+        blockR.classList.add('hidden');
+        blockG.classList.remove('hidden');
+        blockB.classList.add('hidden');
+        document.getElementById('tab-btn-g').classList.add('bg-white', 'shadow', 'text-emerald-600', 'font-semibold');
+      } else if (view === 'b') {
+        blockR.classList.add('hidden');
+        blockG.classList.add('hidden');
+        blockB.classList.remove('hidden');
+        document.getElementById('tab-btn-b').classList.add('bg-white', 'shadow', 'text-sky-600', 'font-semibold');
+      }
+    }
+
+    function exportAllMatricesCSV() {
+      const weightA = (1.0 - alpha).toFixed(2);
+      const weightB = alpha.toFixed(2);
+
+      let csv = `=== Image A Tensor 5x5x3 (Weight: ${weightA}) ===\n`;
+      csv += `[A_R]\n` + matrixA_R.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[A_G]\n` + matrixA_G.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[A_B]\n` + matrixA_B.map(row => row.join(',')).join('\n') + `\n\n`;
+
+      csv += `=== Image B Tensor 5x5x3 (Weight: ${weightB}) ===\n`;
+      csv += `[B_R]\n` + matrixB_R.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[B_G]\n` + matrixB_G.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[B_B]\n` + matrixB_B.map(row => row.join(',')).join('\n') + `\n\n`;
+
+      csv += `=== Result Blended Image C 5x5x3 (C = ${weightA}*A + ${weightB}*B) ===\n`;
+      csv += `[C_R]\n` + matrixC_R.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[C_G]\n` + matrixC_G.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[C_B]\n` + matrixC_B.map(row => row.join(',')).join('\n') + `\n`;
+
+      const tempTextArea = document.createElement('textarea');
+      tempTextArea.value = csv;
+      document.body.appendChild(tempTextArea);
+      tempTextArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempTextArea);
+
+      showToast('📋 전체 A, B, C 블렌딩 CSV 데이터가 복사되었습니다.');
+    }
+
+    function showToast(msg, icon = '✨') {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-icon').innerText = icon;
+      document.getElementById('toast-message').innerText = msg;
+      
+      toast.classList.remove('opacity-0', 'translate-y-[-100px]');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'translate-y-[-100px]');
+      }, 2400);
+    }
+  </script>
+</body>
+</html>

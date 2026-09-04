@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>인공지능 수학 - RGB 채널 행렬 실습기</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f7ff',
+              100: '#e0effe',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- KaTeX for Mathematical Formulas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    
+    .matrix-input::-webkit-outer-spin-button,
+    .matrix-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .matrix-input {
+      -moz-appearance: textfield;
+    }
+    
+    .pixel-canvas {
+      image-rendering: pixelated;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-[1700px] mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-500 via-emerald-500 to-sky-500 flex items-center justify-center text-white font-bold shadow-sm text-base">
+          RGB
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold text-slate-900 leading-tight">인공지능 수학 : RGB 채널과 3차원 텐서 실습</h1>
+          <p class="text-xs text-slate-500">디지털 이미지 행렬 표현 $P_{i,j} = (R_{i,j}, G_{i,j}, B_{i,j})$ 탐구</p>
+        </div>
+      </div>
+
+      <!-- Size Selector & Presets -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <span class="text-xs font-semibold text-slate-500 px-2">크기:</span>
+          <div class="flex space-x-1" id="size-selector-group">
+            <button onclick="changeGridSize(5)" data-size="5" class="size-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white shadow-sm text-sky-600 border border-slate-200">5×5</button>
+            <button onclick="changeGridSize(10)" data-size="10" class="size-btn px-2.5 py-1 text-xs font-medium rounded-lg text-slate-600 hover:text-slate-900">10×10</button>
+            <button onclick="changeGridSize(15)" data-size="15" class="size-btn px-2.5 py-1 text-xs font-medium rounded-lg text-slate-600 hover:text-slate-900">15×15</button>
+            <button onclick="changeGridSize(20)" data-size="20" class="size-btn px-2.5 py-1 text-xs font-medium rounded-lg text-slate-600 hover:text-slate-900">20×20</button>
+            <button onclick="changeGridSize(25)" data-size="25" class="size-btn px-2.5 py-1 text-xs font-medium rounded-lg text-slate-600 hover:text-slate-900">25×25</button>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-1.5">
+          <button onclick="loadSamplePreset('heart')" class="px-2.5 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 shadow-sm transition">❤️ 하트 예시</button>
+          <button onclick="loadSamplePreset('rgb-stripe')" class="px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-sm transition">🌈 RGB 삼색</button>
+          <button onclick="clearAllChannels()" class="px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-rose-50 hover:text-rose-600 shadow-sm transition">🗑️ 초기화</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main 3-Column Layout -->
+  <main class="max-w-[1700px] mx-auto px-4 sm:px-6 py-4 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+    <!-- [COLUMN 1: Left] Color Picker & History Log (3 Cols) -->
+    <section class="lg:col-span-3 flex flex-col space-y-4">
+      
+      <!-- Palette & Slider Card -->
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+          <div class="flex items-center space-x-2">
+            <span class="text-base">🎨</span>
+            <h2 class="text-sm font-bold text-slate-800">컬러 픽커 & 팔레트</h2>
+          </div>
+          <span id="current-hex-badge" class="text-xs font-mono font-bold px-2 py-0.5 bg-slate-100 rounded border border-slate-200 text-slate-800">#FF0000</span>
+        </div>
+
+        <!-- Color Preview & Native Input -->
+        <div class="flex items-center space-x-3 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
+          <input type="color" id="native-color-picker" value="#ff0000" class="w-14 h-14 rounded-xl cursor-pointer border-2 border-white shadow-sm p-0.5 bg-transparent shrink-0">
+          <div class="flex flex-col justify-center space-y-1">
+            <span id="current-rgb-badge" class="text-xs font-mono font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-200 inline-block w-fit">RGB(255, 0, 0)</span>
+            <span class="text-[11px] text-slate-400 leading-tight">색상 클릭 시 자동 저장 및 주입 준비</span>
+          </div>
+        </div>
+
+        <!-- Individual RGB Sliders -->
+        <div class="space-y-2.5 bg-slate-50/70 p-3 rounded-xl border border-slate-200/60">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-bold text-rose-600 w-5">R</span>
+            <input type="range" id="slider-r" min="0" max="255" value="255" class="flex-1 mx-2 h-1.5 accent-rose-500 cursor-pointer">
+            <span id="val-r" class="font-mono text-[11px] w-7 text-right font-semibold text-rose-700">255</span>
+          </div>
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-bold text-emerald-600 w-5">G</span>
+            <input type="range" id="slider-g" min="0" max="255" value="0" class="flex-1 mx-2 h-1.5 accent-emerald-500 cursor-pointer">
+            <span id="val-g" class="font-mono text-[11px] w-7 text-right font-semibold text-emerald-700">0</span>
+          </div>
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-bold text-sky-600 w-5">B</span>
+            <input type="range" id="slider-b" min="0" max="255" value="0" class="flex-1 mx-2 h-1.5 accent-sky-500 cursor-pointer">
+            <span id="val-b" class="font-mono text-[11px] w-7 text-right font-semibold text-sky-700">0</span>
+          </div>
+        </div>
+
+        <!-- Quick Palette Presets -->
+        <div>
+          <div class="text-[11px] font-semibold text-slate-500 mb-1.5">자주 쓰는 색상</div>
+          <div class="grid grid-cols-6 gap-1.5">
+            <button onclick="setColor(255, 0, 0, '#FF0000', true)" class="w-full h-6 rounded-md bg-[#FF0000] border border-black/10 hover:scale-105 transition" title="빨강"></button>
+            <button onclick="setColor(0, 255, 0, '#00FF00', true)" class="w-full h-6 rounded-md bg-[#00FF00] border border-black/10 hover:scale-105 transition" title="초록"></button>
+            <button onclick="setColor(0, 0, 255, '#0000FF', true)" class="w-full h-6 rounded-md bg-[#0000FF] border border-black/10 hover:scale-105 transition" title="파랑"></button>
+            <button onclick="setColor(255, 255, 0, '#FFFF00', true)" class="w-full h-6 rounded-md bg-[#FFFF00] border border-black/10 hover:scale-105 transition" title="노랑"></button>
+            <button onclick="setColor(255, 0, 255, '#FF00FF', true)" class="w-full h-6 rounded-md bg-[#FF00FF] border border-black/10 hover:scale-105 transition" title="마젠타"></button>
+            <button onclick="setColor(0, 255, 255, '#00FFFF', true)" class="w-full h-6 rounded-md bg-[#00FFFF] border border-black/10 hover:scale-105 transition" title="시안"></button>
+            <button onclick="setColor(255, 255, 255, '#FFFFFF', true)" class="w-full h-6 rounded-md bg-[#FFFFFF] border border-slate-300 hover:scale-105 transition" title="흰색"></button>
+            <button onclick="setColor(0, 0, 0, '#000000', true)" class="w-full h-6 rounded-md bg-[#000000] border border-black/10 hover:scale-105 transition" title="검정"></button>
+            <button onclick="setColor(255, 128, 0, '#FF8000', true)" class="w-full h-6 rounded-md bg-[#FF8000] border border-black/10 hover:scale-105 transition" title="주황"></button>
+            <button onclick="setColor(128, 0, 128, '#800080', true)" class="w-full h-6 rounded-md bg-[#800080] border border-black/10 hover:scale-105 transition" title="보라"></button>
+            <button onclick="setColor(255, 192, 203, '#FFC0CB', true)" class="w-full h-6 rounded-md bg-[#FFC0CB] border border-black/10 hover:scale-105 transition" title="핑크"></button>
+            <button onclick="setColor(128, 128, 128, '#808080', true)" class="w-full h-6 rounded-md bg-[#808080] border border-black/10 hover:scale-105 transition" title="회색"></button>
+          </div>
+        </div>
+
+        <!-- Action Fill Button -->
+        <button onclick="fillEntireMatrixWithCurrentColor()" class="w-full py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-900 text-white rounded-xl shadow-sm transition flex items-center justify-center space-x-1.5">
+          <span>✨</span>
+          <span>현재 색상으로 전체 채우기</span>
+        </button>
+      </div>
+
+      <!-- Color Log History Box -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col flex-1 min-h-[220px]">
+        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <div class="flex items-center space-x-2">
+            <span class="text-sm">🕒</span>
+            <h2 class="text-sm font-bold text-slate-800">선택한 컬러 로그 기록</h2>
+          </div>
+          <button onclick="clearColorHistory()" class="text-[11px] text-slate-400 hover:text-rose-500 transition">기록 비우기</button>
+        </div>
+
+        <div class="p-3 flex-1 flex flex-col justify-between">
+          <div id="color-history-list" class="space-y-1.5 max-h-[250px] overflow-y-auto pr-1">
+            <div class="text-center py-6 text-xs text-slate-400">
+              컬러를 선택하면<br>이곳에 히스토리가 기록됩니다.
+            </div>
+          </div>
+          <div class="mt-2 pt-2 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between">
+            <span>* 클릭 시 색상 재선택</span>
+            <span id="history-count" class="font-semibold text-slate-500">0개 저장됨</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 2: Center] RGB Channel Matrices (5.5 Cols) -->
+    <section class="lg:col-span-5 flex flex-col space-y-3">
+      
+      <!-- View Mode Filter Bar -->
+      <div class="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
+          <button id="tab-btn-all" onclick="switchChannelView('all')" class="view-tab-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white shadow text-slate-900">3채널 전체</button>
+          <button id="tab-btn-r" onclick="switchChannelView('r')" class="view-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-rose-600 hover:bg-white/60">Red</button>
+          <button id="tab-btn-g" onclick="switchChannelView('g')" class="view-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-emerald-600 hover:bg-white/60">Green</button>
+          <button id="tab-btn-b" onclick="switchChannelView('b')" class="view-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-blue-600 hover:bg-white/60">Blue</button>
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <label class="inline-flex items-center cursor-pointer text-xs text-slate-600 font-medium select-none">
+            <input type="checkbox" id="auto-fill-toggle" class="sr-only peer" checked>
+            <div class="relative w-7 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-sky-600"></div>
+            <span class="ml-1.5 text-[11px]">클릭 시 현재 색 주입</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Channel Grid Scroll Area -->
+      <div id="channel-grids-wrapper" class="space-y-3 flex-1 overflow-y-auto max-h-[calc(100vh-140px)] pr-1">
+        
+        <!-- Red Channel Card -->
+        <div id="card-red" class="bg-white rounded-2xl border border-rose-200 shadow-sm overflow-hidden transition">
+          <div class="bg-rose-50/80 px-3.5 py-2 border-b border-rose-100 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-rose-900">Red Channel Matrix $\mathbf{R} \in \{0, \dots, 255\}^{N \times N}$</h2>
+            </div>
+            <div class="text-[11px] text-rose-600 font-medium">빨강 강도</div>
+          </div>
+          <div class="p-2.5 overflow-x-auto">
+            <div id="grid-container-r" class="inline-grid gap-1 p-0.5"></div>
+          </div>
+        </div>
+
+        <!-- Green Channel Card -->
+        <div id="card-green" class="bg-white rounded-2xl border border-emerald-200 shadow-sm overflow-hidden transition">
+          <div class="bg-emerald-50/80 px-3.5 py-2 border-b border-emerald-100 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-emerald-900">Green Channel Matrix $\mathbf{G} \in \{0, \dots, 255\}^{N \times N}$</h2>
+            </div>
+            <div class="text-[11px] text-emerald-600 font-medium">초록 강도</div>
+          </div>
+          <div class="p-2.5 overflow-x-auto">
+            <div id="grid-container-g" class="inline-grid gap-1 p-0.5"></div>
+          </div>
+        </div>
+
+        <!-- Blue Channel Card -->
+        <div id="card-blue" class="bg-white rounded-2xl border border-sky-200 shadow-sm overflow-hidden transition">
+          <div class="bg-sky-50/80 px-3.5 py-2 border-b border-sky-100 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-sky-900">Blue Channel Matrix $\mathbf{B} \in \{0, \dots, 255\}^{N \times N}$</h2>
+            </div>
+            <div class="text-[11px] text-sky-600 font-medium">파랑 강도</div>
+          </div>
+          <div class="p-2.5 overflow-x-auto">
+            <div id="grid-container-b" class="inline-grid gap-1 p-0.5"></div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 3: Right] Rendered Canvas & Math Tensor Inspector (3.5 Cols) -->
+    <section class="lg:col-span-4 flex flex-col space-y-4">
+
+      <!-- Rendered Image Canvas Card -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-slate-700"></span>
+            <h2 class="text-sm font-bold text-slate-800">최종 합성 이미지</h2>
+          </div>
+          <div class="flex items-center space-x-1.5">
+            <button onclick="downloadRenderedImage()" class="text-xs px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-medium rounded-lg border border-slate-200 shadow-sm transition">
+              💾 PNG
+            </button>
+            <button onclick="exportMatrixAsCSV()" class="text-xs px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-medium rounded-lg border border-slate-200 shadow-sm transition">
+              📊 CSV
+            </button>
+          </div>
+        </div>
+
+        <div class="p-5 flex flex-col items-center justify-center bg-slate-100/50">
+          <!-- Canvas Box -->
+          <div class="relative group p-2 bg-white rounded-2xl shadow-md border border-slate-200">
+            <canvas id="render-canvas" width="280" height="280" class="pixel-canvas rounded-xl w-[220px] h-[220px] sm:w-[260px] sm:h-[260px] xl:w-[280px] xl:h-[280px] border border-slate-200 cursor-crosshair bg-white transition"></canvas>
+            <div id="canvas-hover-badge" class="hidden absolute bottom-3 left-1/2 transform -translate-x-1/2 bg-slate-900/90 text-white text-[11px] px-2.5 py-1 rounded-md shadow-lg pointer-events-none whitespace-nowrap">
+              (0, 0) : rgb(0, 0, 0)
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-2.5 text-center">💡 캔버스의 특정 픽셀을 직접 클릭하여 색칠할 수 있습니다.</p>
+        </div>
+
+        <!-- Selected Pixel Tensor Inspector -->
+        <div class="p-4 border-t border-slate-100 bg-white">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-slate-700">선택 픽셀 수학적 벡터 표현</span>
+            <span id="selected-coord-text" class="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded text-slate-600">좌표 $(i=1, j=1)$</span>
+          </div>
+          <div id="pixel-tensor-formula" class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center text-sm font-mono overflow-x-auto">
+            $$P_{1,1} = \begin{bmatrix} R_{1,1} \\ G_{1,1} \\ B_{1,1} \end{bmatrix} = \begin{bmatrix} 0 \\ 0 \\ 0 \end{bmatrix}$$
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick AI Math Guide Card -->
+      <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-2xl shadow-sm">
+        <div class="flex items-center space-x-2 mb-2">
+          <span class="text-sky-400 font-bold text-sm">💡 AI 수학 개념 팁</span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          컬러 디지털 이미지는 높이($H$), 너비($W$), 색상 채널수($C=3$)를 가진 <strong class="text-sky-300">3차원 텐서(Tensor)</strong> $\mathbf{X} \in \mathbb{R}^{H \times W \times 3}$로 표현됩니다. 각 화소(Pixel)는 3차원 벡터로서 색상 공간의 한 점을 나타냅니다.
+        </p>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 flex items-center space-x-2 pointer-events-none">
+    <span id="toast-icon">✨</span>
+    <span id="toast-message">알림</span>
+  </div>
+
+  <!-- JavaScript Logic -->
+  <script>
+    // App State
+    let currentGridSize = 5;
+    let selectedPixel = { r: 0, c: 0 };
+    let currentColor = { r: 255, g: 0, b: 0, hex: '#ff0000' };
+    let colorHistory = [];
+    
+    // Matrix Data: [R, G, B] each is size x size 2D array
+    let matrixR = [];
+    let matrixG = [];
+    let matrixB = [];
+
+    // Precise Heart Generator for any grid size
+    function generateHeartPattern(size) {
+      if (size === 5) {
+        return [
+          [0, 1, 0, 1, 0],
+          [1, 1, 1, 1, 1],
+          [1, 1, 1, 1, 1],
+          [0, 1, 1, 1, 0],
+          [0, 0, 1, 0, 0]
+        ];
+      }
+
+      if (size === 10) {
+        return [
+          [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+          [0, 1, 1, 0, 0, 0, 0, 1, 1, 0],
+          [1, 1, 1, 1, 0, 0, 1, 1, 1, 1],
+          [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [0, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+          [0, 0, 1, 1, 1, 1, 1, 1, 0, 0],
+          [0, 0, 0, 1, 1, 1, 1, 0, 0, 0],
+          [0, 0, 0, 0, 1, 1, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        ];
+      }
+
+      // For 15x15, 20x20, 25x25: Continuous Taubin Heart Formula with verified bounds
+      const pattern = Array(size).fill(0).map(() => Array(size).fill(0));
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          const x = ((c - (size - 1) / 2) / ((size - 1) / 2)) * 1.3;
+          const y = 1.3 - (r / (size - 1)) * 2.45;
+          const x2 = x * x;
+          const y2 = y * y;
+          const val = Math.pow(x2 + y2 - 1, 3) - x2 * Math.pow(y, 3);
+          if (val <= 0) {
+            pattern[r][c] = 1;
+          }
+        }
+      }
+      return pattern;
+    }
+
+    // Initialize Grid with Data
+    function initDefaultData(size) {
+      currentGridSize = size;
+      matrixR = Array(size).fill(0).map(() => Array(size).fill(0));
+      matrixG = Array(size).fill(0).map(() => Array(size).fill(0));
+      matrixB = Array(size).fill(0).map(() => Array(size).fill(0));
+
+      const heart = generateHeartPattern(size);
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          if (heart[r][c] === 1) {
+            matrixR[r][c] = 255;
+          }
+        }
+      }
+    }
+
+    // DOM Ready
+    window.addEventListener('DOMContentLoaded', () => {
+      initDefaultData(5);
+      renderGridInputs();
+      updateRenderedCanvas();
+      updateSelectedFormula();
+      addColorToHistory(255, 0, 0, '#ff0000');
+      
+      // Auto-render Math
+      if (window.renderMathInElement) {
+        renderMathInElement(document.body, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false}
+          ]
+        });
+      }
+
+      setupEventListeners();
+    });
+
+    // Event Listeners for Pickers and Sliders
+    function setupEventListeners() {
+      const colorPicker = document.getElementById('native-color-picker');
+      const sliderR = document.getElementById('slider-r');
+      const sliderG = document.getElementById('slider-g');
+      const sliderB = document.getElementById('slider-b');
+
+      colorPicker.addEventListener('input', (e) => {
+        const hex = e.target.value;
+        const rgb = hexToRgb(hex);
+        setColor(rgb.r, rgb.g, rgb.b, hex, false);
+      });
+
+      colorPicker.addEventListener('change', (e) => {
+        const hex = e.target.value;
+        const rgb = hexToRgb(hex);
+        setColor(rgb.r, rgb.g, rgb.b, hex, true);
+      });
+
+      const updateFromSliders = (saveToHistory = false) => {
+        const r = parseInt(sliderR.value, 10);
+        const g = parseInt(sliderG.value, 10);
+        const b = parseInt(sliderB.value, 10);
+        const hex = rgbToHex(r, g, b);
+        setColor(r, g, b, hex, saveToHistory);
+      };
+
+      sliderR.addEventListener('input', () => updateFromSliders(false));
+      sliderG.addEventListener('input', () => updateFromSliders(false));
+      sliderB.addEventListener('input', () => updateFromSliders(false));
+
+      sliderR.addEventListener('change', () => updateFromSliders(true));
+      sliderG.addEventListener('change', () => updateFromSliders(true));
+      sliderB.addEventListener('change', () => updateFromSliders(true));
+
+      // Canvas Interaction
+      const canvas = document.getElementById('render-canvas');
+      const badge = document.getElementById('canvas-hover-badge');
+
+      canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+
+        const cellW = canvas.width / currentGridSize;
+        const cellH = canvas.height / currentGridSize;
+
+        const col = Math.floor(x / cellW);
+        const row = Math.floor(y / cellH);
+
+        if (row >= 0 && row < currentGridSize && col >= 0 && col < currentGridSize) {
+          const r = matrixR[row][col];
+          const g = matrixG[row][col];
+          const b = matrixB[row][col];
+          badge.innerText = `행 ${row + 1}, 열 ${col + 1} : (${r}, ${g}, ${b})`;
+          badge.classList.remove('hidden');
+        }
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        badge.classList.add('hidden');
+      });
+
+      canvas.addEventListener('click', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const col = Math.floor(((e.clientX - rect.left) * scaleX) / (canvas.width / currentGridSize));
+        const row = Math.floor(((e.clientY - rect.top) * scaleY) / (canvas.height / currentGridSize));
+
+        if (row >= 0 && row < currentGridSize && col >= 0 && col < currentGridSize) {
+          selectedPixel = { r: row, c: col };
+          const autoFill = document.getElementById('auto-fill-toggle').checked;
+          if (autoFill) {
+            setPixelColor(row, col, currentColor.r, currentColor.g, currentColor.b);
+          } else {
+            const r = matrixR[row][col];
+            const g = matrixG[row][col];
+            const b = matrixB[row][col];
+            setColor(r, g, b, rgbToHex(r, g, b), true);
+          }
+          updateSelectedFormula();
+          highlightSelectedCell();
+        }
+      });
+    }
+
+    // Set Active Color
+    function setColor(r, g, b, hex, saveToHistory = false) {
+      currentColor = { r, g, b, hex };
+
+      document.getElementById('native-color-picker').value = hex;
+      document.getElementById('current-hex-badge').innerText = hex.toUpperCase();
+      document.getElementById('current-rgb-badge').innerText = `RGB(${r}, ${g}, ${b})`;
+
+      document.getElementById('slider-r').value = r;
+      document.getElementById('slider-g').value = g;
+      document.getElementById('slider-b').value = b;
+      document.getElementById('val-r').innerText = r;
+      document.getElementById('val-g').innerText = g;
+      document.getElementById('val-b').innerText = b;
+
+      if (saveToHistory) {
+        addColorToHistory(r, g, b, hex);
+      }
+    }
+
+    // Color History Logger
+    function addColorToHistory(r, g, b, hex) {
+      if (colorHistory.length > 0) {
+        const top = colorHistory[0];
+        if (top.r === r && top.g === g && top.b === b) return;
+      }
+
+      colorHistory.unshift({ r, g, b, hex, time: new Date().toLocaleTimeString() });
+      if (colorHistory.length > 20) colorHistory.pop();
+
+      renderColorHistory();
+    }
+
+    function renderColorHistory() {
+      const container = document.getElementById('color-history-list');
+      const countBadge = document.getElementById('history-count');
+      countBadge.innerText = `${colorHistory.length}개 저장됨`;
+
+      if (colorHistory.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-6 text-xs text-slate-400">
+            아래 컬러 픽커에서 색상을 선택하면<br>이곳에 히스토리가 기록됩니다.
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = colorHistory.map((item, idx) => `
+        <div onclick="selectHistoryColor(${item.r}, ${item.g}, ${item.b}, '${item.hex}')" 
+             class="group flex items-center justify-between p-1.5 rounded-lg border border-slate-100 hover:border-slate-300 hover:bg-slate-50 cursor-pointer transition">
+          <div class="flex items-center space-x-2.5">
+            <div class="w-6 h-6 rounded-md shadow-inner border border-black/10 flex-shrink-0" style="background-color: ${item.hex}"></div>
+            <div class="flex flex-col">
+              <span class="text-xs font-mono font-bold text-slate-700">(${item.r}, ${item.g}, ${item.b})</span>
+              <span class="text-[10px] font-mono text-slate-400">${item.hex.toUpperCase()}</span>
+            </div>
+          </div>
+          <span class="text-[10px] text-slate-400 group-hover:text-sky-600 font-medium transition">적용 ↵</span>
+        </div>
+      `).join('');
+    }
+
+    function selectHistoryColor(r, g, b, hex) {
+      setColor(r, g, b, hex, false);
+      showToast(`🎨 색상 (${r}, ${g}, ${b}) 적용됨`);
+    }
+
+    function clearColorHistory() {
+      colorHistory = [];
+      renderColorHistory();
+      showToast('히스토리가 초기화되었습니다.');
+    }
+
+    // Grid Size Changing
+    function changeGridSize(newSize) {
+      if (currentGridSize === newSize) return;
+
+      currentGridSize = newSize;
+      
+      // Update Buttons UI
+      document.querySelectorAll('#size-selector-group .size-btn').forEach(btn => {
+        const sz = parseInt(btn.getAttribute('data-size'), 10);
+        if (sz === newSize) {
+          btn.className = 'size-btn px-2.5 py-1 text-xs font-semibold rounded bg-white shadow-sm text-sky-600 border border-slate-200';
+        } else {
+          btn.className = 'size-btn px-2.5 py-1 text-xs font-medium rounded text-slate-600 hover:text-slate-900';
+        }
+      });
+
+      initDefaultData(newSize);
+      selectedPixel = { r: 0, c: 0 };
+      renderGridInputs();
+      updateRenderedCanvas();
+      updateSelectedFormula();
+      showToast(`${newSize}×${newSize} 그리드로 변경되었습니다.`);
+    }
+
+    // Render 3 Channel Input Grids
+    function renderGridInputs() {
+      const containerR = document.getElementById('grid-container-r');
+      const containerG = document.getElementById('grid-container-g');
+      const containerB = document.getElementById('grid-container-b');
+
+      const buildGridHTML = (channel, matrix, colorClass) => {
+        let html = '';
+        const size = currentGridSize;
+        
+        let cellClass = 'w-9 h-8 text-xs';
+        if (size >= 15) cellClass = 'w-7 h-7 text-[11px] p-0';
+        if (size >= 20) cellClass = 'w-6 h-6 text-[10px] p-0';
+        if (size >= 25) cellClass = 'w-5 h-5 text-[9px] p-0';
+
+        for (let r = 0; r < size; r++) {
+          html += `<div class="flex gap-1">`;
+          for (let c = 0; c < size; c++) {
+            const val = matrix[r][c];
+            html += `
+              <input type="number" min="0" max="255" value="${val}"
+                     id="cell-${channel}-${r}-${c}"
+                     data-channel="${channel}" data-r="${r}" data-c="${c}"
+                     onfocus="onCellFocus(${r}, ${c})"
+                     oninput="onCellInput(event, '${channel}', ${r}, ${c})"
+                     class="matrix-input ${cellClass} text-center font-mono font-medium rounded border border-slate-200 focus:outline-none focus:ring-2 focus:ring-${colorClass}-500 ${colorClass === 'rose' ? 'bg-rose-50/40 text-rose-900' : colorClass === 'emerald' ? 'bg-emerald-50/40 text-emerald-900' : 'bg-sky-50/40 text-sky-900'} transition-all">
+            `;
+          }
+          html += `</div>`;
+        }
+        return html;
+      };
+
+      containerR.innerHTML = buildGridHTML('r', matrixR, 'rose');
+      containerG.innerHTML = buildGridHTML('g', matrixG, 'emerald');
+      containerB.innerHTML = buildGridHTML('b', matrixB, 'sky');
+
+      highlightSelectedCell();
+    }
+
+    // Cell Focus & Input Handlers
+    function onCellFocus(r, c) {
+      selectedPixel = { r, c };
+      updateSelectedFormula();
+      highlightSelectedCell();
+    }
+
+    function onCellInput(event, channel, r, c) {
+      let val = parseInt(event.target.value, 10);
+      if (isNaN(val)) val = 0;
+      if (val < 0) val = 0;
+      if (val > 255) val = 255;
+      event.target.value = val;
+
+      if (channel === 'r') matrixR[r][c] = val;
+      if (channel === 'g') matrixG[r][c] = val;
+      if (channel === 'b') matrixB[r][c] = val;
+
+      updateRenderedCanvas();
+      updateSelectedFormula();
+    }
+
+    // Set pixel color across all 3 channels
+    function setPixelColor(r, c, red, green, blue) {
+      matrixR[r][c] = red;
+      matrixG[r][c] = green;
+      matrixB[r][c] = blue;
+
+      const inputR = document.getElementById(`cell-r-${r}-${c}`);
+      const inputG = document.getElementById(`cell-g-${r}-${c}`);
+      const inputB = document.getElementById(`cell-b-${r}-${c}`);
+
+      if (inputR) inputR.value = red;
+      if (inputG) inputG.value = green;
+      if (inputB) inputB.value = blue;
+
+      updateRenderedCanvas();
+      updateSelectedFormula();
+    }
+
+    // Highlight active cell in all 3 grids
+    function highlightSelectedCell() {
+      document.querySelectorAll('.matrix-input').forEach(el => el.classList.remove('ring-2', 'ring-slate-900', 'font-bold'));
+      const { r, c } = selectedPixel;
+      ['r', 'g', 'b'].forEach(ch => {
+        const el = document.getElementById(`cell-${ch}-${r}-${c}`);
+        if (el) {
+          el.classList.add('ring-2', 'ring-slate-900', 'font-bold');
+        }
+      });
+    }
+
+    // Render Canvas
+    function updateRenderedCanvas() {
+      const canvas = document.getElementById('render-canvas');
+      const ctx = canvas.getContext('2d');
+      const size = currentGridSize;
+
+      const width = canvas.width;
+      const height = canvas.height;
+      const cellW = width / size;
+      const cellH = height / size;
+
+      ctx.clearRect(0, 0, width, height);
+
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          const red = matrixR[r][c] || 0;
+          const green = matrixG[r][c] || 0;
+          const blue = matrixB[r][c] || 0;
+
+          ctx.fillStyle = `rgb(${red}, ${green}, ${blue})`;
+          ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+
+          // Grid line stroke
+          ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+        }
+      }
+    }
+
+    // Update LaTeX Mathematical Formula
+    function updateSelectedFormula() {
+      const { r, c } = selectedPixel;
+      const red = (matrixR[r] && matrixR[r][c] !== undefined) ? matrixR[r][c] : 0;
+      const green = (matrixG[r] && matrixG[r][c] !== undefined) ? matrixG[r][c] : 0;
+      const blue = (matrixB[r] && matrixB[r][c] !== undefined) ? matrixB[r][c] : 0;
+
+      const coordBadge = document.getElementById('selected-coord-text');
+      coordBadge.innerHTML = `좌표 $(i=${r + 1}, j=${c + 1})$`;
+
+      const formulaBox = document.getElementById('pixel-tensor-formula');
+      formulaBox.innerHTML = `$$P_{${r + 1},${c + 1}} = \\begin{bmatrix} R_{${r + 1},${c + 1}} \\\\ G_{${r + 1},${c + 1}} \\\\ B_{${r + 1},${c + 1}} \\end{bmatrix} = \\begin{bmatrix} ${red} \\\\ ${green} \\\\ ${blue} \\end{bmatrix}$$`;
+
+      if (window.renderMathInElement) {
+        renderMathInElement(coordBadge, {
+          delimiters: [{left: '$', right: '$', display: false}]
+        });
+        renderMathInElement(formulaBox, {
+          delimiters: [{left: '$$', right: '$$', display: true}]
+        });
+      }
+    }
+
+    // Fill Entire Matrix
+    function fillEntireMatrixWithCurrentColor() {
+      const { r, g, b } = currentColor;
+      for (let row = 0; row < currentGridSize; row++) {
+        for (let col = 0; col < currentGridSize; col++) {
+          matrixR[row][col] = r;
+          matrixG[row][col] = g;
+          matrixB[row][col] = b;
+        }
+      }
+      renderGridInputs();
+      updateRenderedCanvas();
+      updateSelectedFormula();
+      showToast(`전체 그리드가 RGB(${r}, ${g}, ${b}) 색상으로 채워졌습니다.`);
+    }
+
+    // Clear All Channels
+    function clearAllChannels() {
+      for (let row = 0; row < currentGridSize; row++) {
+        for (let col = 0; col < currentGridSize; col++) {
+          matrixR[row][col] = 0;
+          matrixG[row][col] = 0;
+          matrixB[row][col] = 0;
+        }
+      }
+      renderGridInputs();
+      updateRenderedCanvas();
+      updateSelectedFormula();
+      showToast('모든 채널의 값이 0으로 초기화되었습니다.');
+    }
+
+    // Sample Presets
+    function loadSamplePreset(type) {
+      clearAllChannels();
+      const sz = currentGridSize;
+
+      if (type === 'heart') {
+        const heartPattern = generateHeartPattern(sz);
+        for (let r = 0; r < sz; r++) {
+          for (let c = 0; c < sz; c++) {
+            if (heartPattern[r][c] === 1) {
+              matrixR[r][c] = 255;
+              matrixG[r][c] = 0;
+              matrixB[r][c] = 0;
+            }
+          }
+        }
+        showToast('❤️ 하트 패턴 프리셋을 불러왔습니다.');
+      } else if (type === 'rgb-stripe') {
+        for (let r = 0; r < sz; r++) {
+          for (let c = 0; c < sz; c++) {
+            const section = Math.floor((c / sz) * 3);
+            if (section === 0) {
+              matrixR[r][c] = 255;
+            } else if (section === 1) {
+              matrixG[r][c] = 255;
+            } else {
+              matrixB[r][c] = 255;
+            }
+          }
+        }
+        showToast('🌈 RGB 3색 스트라이프 프리셋을 불러왔습니다.');
+      }
+
+      renderGridInputs();
+      updateRenderedCanvas();
+      updateSelectedFormula();
+    }
+
+    // Switch Channel Views
+    function switchChannelView(view) {
+      const cardR = document.getElementById('card-red');
+      const cardG = document.getElementById('card-green');
+      const cardB = document.getElementById('card-blue');
+
+      document.querySelectorAll('.view-tab-btn').forEach(btn => {
+        btn.classList.remove('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+        btn.classList.add('text-slate-600');
+      });
+
+      if (view === 'all') {
+        cardR.classList.remove('hidden');
+        cardG.classList.remove('hidden');
+        cardB.classList.remove('hidden');
+        document.getElementById('tab-btn-all').classList.add('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+      } else if (view === 'r') {
+        cardR.classList.remove('hidden');
+        cardG.classList.add('hidden');
+        cardB.classList.add('hidden');
+        document.getElementById('tab-btn-r').classList.add('bg-white', 'shadow', 'text-rose-600', 'font-semibold');
+      } else if (view === 'g') {
+        cardR.classList.add('hidden');
+        cardG.classList.remove('hidden');
+        cardB.classList.add('hidden');
+        document.getElementById('tab-btn-g').classList.add('bg-white', 'shadow', 'text-emerald-600', 'font-semibold');
+      } else if (view === 'b') {
+        cardR.classList.add('hidden');
+        cardG.classList.add('hidden');
+        cardB.classList.remove('hidden');
+        document.getElementById('tab-btn-b').classList.add('bg-white', 'shadow', 'text-blue-600', 'font-semibold');
+      }
+    }
+
+    // Export Matrix As CSV to Clipboard
+    function exportMatrixAsCSV() {
+      let csv = `Red Channel (${currentGridSize}x${currentGridSize})\n`;
+      for (let r = 0; r < currentGridSize; r++) {
+        csv += matrixR[r].join(',') + '\n';
+      }
+      csv += `\nGreen Channel (${currentGridSize}x${currentGridSize})\n`;
+      for (let r = 0; r < currentGridSize; r++) {
+        csv += matrixG[r].join(',') + '\n';
+      }
+      csv += `\nBlue Channel (${currentGridSize}x${currentGridSize})\n`;
+      for (let r = 0; r < currentGridSize; r++) {
+        csv += matrixB[r].join(',') + '\n';
+      }
+
+      const tempTextArea = document.createElement('textarea');
+      tempTextArea.value = csv;
+      document.body.appendChild(tempTextArea);
+      tempTextArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempTextArea);
+
+      showToast('📋 CSV 데이터가 클립보드에 복사되었습니다.');
+    }
+
+    // Download Rendered Image as PNG
+    function downloadRenderedImage() {
+      const canvas = document.getElementById('render-canvas');
+      const link = document.createElement('a');
+      link.download = `rgb_tensor_${currentGridSize}x${currentGridSize}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      showToast('🖼️ 렌더링 이미지가 저장되었습니다.');
+    }
+
+    // Helpers
+    function hexToRgb(hex) {
+      const bigint = parseInt(hex.replace('#', ''), 16);
+      return {
+        r: (bigint >> 16) & 255,
+        g: (bigint >> 8) & 255,
+        b: bigint & 255
+      };
+    }
+
+    function rgbToHex(r, g, b) {
+      return '#' + [r, g, b].map(x => {
+        const hex = x.toString(16);
+        return hex.length === 1 ? '0' + hex : hex;
+      }).join('');
+    }
+
+    function showToast(msg, icon = '✨') {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-icon').innerText = icon;
+      document.getElementById('toast-message').innerText = msg;
+      
+      toast.classList.remove('opacity-0', 'translate-y-[-100px]');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'translate-y-[-100px]');
+      }, 2400);
+    }
+  </script>
+</body>
+</html>

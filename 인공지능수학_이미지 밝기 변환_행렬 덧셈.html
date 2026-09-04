@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>인공지능 수학 - RGB 컬러 이미지 밝기 변환 (행렬 덧셈)</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f8fafc',
+              100: '#f1f5f9',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- KaTeX for Mathematical Formulas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    
+    .matrix-input::-webkit-outer-spin-button,
+    .matrix-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .matrix-input {
+      -moz-appearance: textfield;
+    }
+    
+    .pixel-canvas {
+      image-rendering: pixelated;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-[1700px] mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-500 via-emerald-500 to-sky-500 flex items-center justify-center text-white font-bold shadow-sm text-base">
+          $\mathbf{A}+\mathbf{B}$
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold text-slate-900 leading-tight">인공지능 수학 : 컬러 이미지($5 \times 5$) 밝기 변환과 행렬 덧셈</h1>
+          <p class="text-xs text-slate-500">3채널 텐서 $\mathbf{C}_{i,j} = \text{clamp}(\mathbf{A}_{i,j} + \mathbf{B}_{i,j}, 0, 255)$ 변환 관찰</p>
+        </div>
+      </div>
+
+      <!-- Preset Controls -->
+      <div class="flex items-center space-x-1.5">
+        <button onclick="loadPreset('color-heart')" class="px-2.5 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 shadow-sm transition">💖 컬러 하트</button>
+        <button onclick="loadPreset('sunset')" class="px-2.5 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 shadow-sm transition">🌅 석양 그라데이션</button>
+        <button onclick="loadPreset('flower')" class="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 shadow-sm transition">🌸 꽃 패턴</button>
+        <button onclick="resetAll()" class="px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-rose-50 hover:text-rose-600 shadow-sm transition">🔄 초기화</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main 3-Column Layout -->
+  <main class="max-w-[1700px] mx-auto px-4 sm:px-6 py-4 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+    <!-- [COLUMN 1: Left] Brightness Modifier & Channel Controllers (3 Cols) -->
+    <section class="lg:col-span-3 flex flex-col space-y-4">
+      
+      <!-- Master Brightness Offset Controller -->
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+          <div class="flex items-center space-x-2">
+            <span class="text-base">☀️</span>
+            <h2 class="text-sm font-bold text-slate-800">전체 밝기 변환 ($\mathbf{B}$) 조절</h2>
+          </div>
+          <span id="master-offset-badge" class="text-xs font-mono font-bold px-2 py-0.5 bg-amber-100 text-amber-800 rounded border border-amber-200">+40</span>
+        </div>
+
+        <div class="space-y-2 bg-amber-50/60 p-3 rounded-xl border border-amber-200/70">
+          <div class="flex items-center justify-between text-xs font-semibold text-amber-900">
+            <span>공통 밝기 덧셈 가중치 ($b$)</span>
+            <span id="slider-master-val" class="font-mono text-amber-700 font-bold">+40</span>
+          </div>
+          <input type="range" id="slider-master-offset" min="-255" max="255" value="40" class="w-full h-2 bg-amber-200 rounded-lg appearance-none cursor-pointer accent-amber-600">
+          
+          <div class="grid grid-cols-4 gap-1 pt-1.5">
+            <button onclick="setMasterOffset(50)" class="py-1 text-[11px] font-semibold bg-white border border-amber-200 rounded-lg hover:bg-amber-100 text-amber-900 shadow-sm transition">+50</button>
+            <button onclick="setMasterOffset(100)" class="py-1 text-[11px] font-semibold bg-white border border-amber-200 rounded-lg hover:bg-amber-100 text-amber-900 shadow-sm transition">+100</button>
+            <button onclick="setMasterOffset(-50)" class="py-1 text-[11px] font-semibold bg-white border border-amber-200 rounded-lg hover:bg-amber-100 text-amber-900 shadow-sm transition">-50</button>
+            <button onclick="setMasterOffset(0)" class="py-1 text-[11px] font-semibold bg-white border border-amber-200 rounded-lg hover:bg-amber-100 text-slate-700 shadow-sm transition">0 (원본)</button>
+          </div>
+        </div>
+
+        <!-- Per-Channel Brightness Control (RGB 개별 미세 조절) -->
+        <div class="space-y-3 bg-slate-50/80 p-3 rounded-xl border border-slate-200/80">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-700">채널별 개별 밝기 조절</span>
+            <button onclick="syncAllChannelsToMaster()" class="text-[10px] text-indigo-600 hover:underline font-semibold">전체 동기화</button>
+          </div>
+
+          <!-- Red Offset -->
+          <div class="flex items-center justify-between text-xs space-x-2">
+            <span class="font-bold text-rose-600 w-12 flex-shrink-0">Red ($B_R$)</span>
+            <input type="range" id="slider-offset-r" min="-255" max="255" value="40" class="flex-1 h-1.5 accent-rose-500 cursor-pointer">
+            <span id="badge-offset-r" class="font-mono text-[11px] w-8 text-right font-bold text-rose-700">+40</span>
+          </div>
+
+          <!-- Green Offset -->
+          <div class="flex items-center justify-between text-xs space-x-2">
+            <span class="font-bold text-emerald-600 w-12 flex-shrink-0">Grn ($B_G$)</span>
+            <input type="range" id="slider-offset-g" min="-255" max="255" value="40" class="flex-1 h-1.5 accent-emerald-500 cursor-pointer">
+            <span id="badge-offset-g" class="font-mono text-[11px] w-8 text-right font-bold text-emerald-700">+40</span>
+          </div>
+
+          <!-- Blue Offset -->
+          <div class="flex items-center justify-between text-xs space-x-2">
+            <span class="font-bold text-sky-600 w-12 flex-shrink-0">Blu ($B_B$)</span>
+            <input type="range" id="slider-offset-b" min="-255" max="255" value="40" class="flex-1 h-1.5 accent-sky-500 cursor-pointer">
+            <span id="badge-offset-b" class="font-mono text-[11px] w-8 text-right font-bold text-sky-700">+40</span>
+          </div>
+        </div>
+
+        <!-- Selected Pixel Color Inspector & Editor -->
+        <div class="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 flex flex-col space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-indigo-900">선택 픽셀 색상 비교</span>
+            <span id="selected-pixel-coords" class="text-[11px] font-mono text-indigo-700 font-bold">(1, 1)</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-center">
+            <div class="bg-white p-2 rounded-lg border border-indigo-100 shadow-sm flex flex-col items-center">
+              <span class="text-[10px] text-slate-500 mb-1">원본 색상 ($\mathbf{A}$)</span>
+              <div id="preview-pixel-a" class="w-10 h-10 rounded-md border border-slate-200 shadow-inner"></div>
+              <span id="text-pixel-a" class="text-[10px] font-mono font-bold mt-1 text-slate-700">(0,0,0)</span>
+            </div>
+            <div class="bg-white p-2 rounded-lg border border-indigo-100 shadow-sm flex flex-col items-center">
+              <span class="text-[10px] text-slate-500 mb-1">변환 색상 ($\mathbf{C}$)</span>
+              <div id="preview-pixel-c" class="w-10 h-10 rounded-md border border-slate-200 shadow-inner"></div>
+              <span id="text-pixel-c" class="text-[10px] font-mono font-bold mt-1 text-slate-700">(40,40,40)</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- AI Math Guide Note -->
+      <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-2xl shadow-sm space-y-2">
+        <div class="flex items-center space-x-2">
+          <span class="text-indigo-400 font-bold text-sm">💡 AI 수학 개념 팁</span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          컬러 이미지는 3차원 텐서 $\mathbf{A} \in \{0,\dots,255\}^{5 \times 5 \times 3}$입니다. 밝기 변환은 각 화소의 $R, G, B$ 채널에 가중치 행렬 $\mathbf{B}$를 성분별로 더하는 <strong class="text-amber-300">행렬 덧셈 $\mathbf{C} = \mathbf{A} + \mathbf{B}$</strong>으로 모델링됩니다.
+        </p>
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 2: Center] 5x5 R, G, B Channel Matrices for A, B, and C (5.5 Cols) -->
+    <section class="lg:col-span-5 flex flex-col space-y-3">
+      
+      <!-- Channel Selector Tabs -->
+      <div class="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
+          <button id="tab-btn-all" onclick="switchChannelView('all')" class="ch-tab-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white shadow text-slate-900">RGB 3채널 전체</button>
+          <button id="tab-btn-r" onclick="switchChannelView('r')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-rose-600 hover:bg-white/60">Red ($\mathbf{R}$)</button>
+          <button id="tab-btn-g" onclick="switchChannelView('g')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-emerald-600 hover:bg-white/60">Green ($\mathbf{G}$)</button>
+          <button id="tab-btn-b" onclick="switchChannelView('b')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-sky-600 hover:bg-white/60">Blue ($\mathbf{B}$)</button>
+        </div>
+
+        <div class="text-[11px] text-slate-400 font-medium">
+          크기: <span class="font-bold text-indigo-600">5 × 5 고정 실습</span>
+        </div>
+      </div>
+
+      <!-- Matrices Scroll Area -->
+      <div id="matrices-wrapper" class="space-y-4 flex-1 overflow-y-auto max-h-[calc(100vh-140px)] pr-1">
+        
+        <!-- RED CHANNEL BLOCK -->
+        <div id="block-channel-r" class="bg-white rounded-2xl border border-rose-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-rose-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-rose-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-rose-900">Red 채널 연산 : $\mathbf{C}_R = \text{clamp}(\mathbf{A}_R + \mathbf{B}_R)$</h2>
+            </div>
+            <span class="text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">빨강</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-center items-center">
+            <!-- Matrix A_R -->
+            <div class="bg-rose-50/40 p-2 rounded-xl border border-rose-100">
+              <div class="text-[11px] font-bold text-rose-900 mb-1.5">$\mathbf{A}_R$ (원본)</div>
+              <div id="grid-a-r" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix B_R -->
+            <div class="bg-amber-50/40 p-2 rounded-xl border border-amber-100">
+              <div class="text-[11px] font-bold text-amber-900 mb-1.5">$\mathbf{B}_R$ (변환값)</div>
+              <div id="grid-b-r" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix C_R -->
+            <div class="bg-emerald-50/40 p-2 rounded-xl border border-emerald-100">
+              <div class="text-[11px] font-bold text-emerald-900 mb-1.5">$\mathbf{C}_R$ (결과)</div>
+              <div id="grid-c-r" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GREEN CHANNEL BLOCK -->
+        <div id="block-channel-g" class="bg-white rounded-2xl border border-emerald-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-emerald-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-emerald-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-emerald-900">Green 채널 연산 : $\mathbf{C}_G = \text{clamp}(\mathbf{A}_G + \mathbf{B}_G)$</h2>
+            </div>
+            <span class="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">초록</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-center items-center">
+            <!-- Matrix A_G -->
+            <div class="bg-emerald-50/40 p-2 rounded-xl border border-emerald-100">
+              <div class="text-[11px] font-bold text-emerald-900 mb-1.5">$\mathbf{A}_G$ (원본)</div>
+              <div id="grid-a-g" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix B_G -->
+            <div class="bg-amber-50/40 p-2 rounded-xl border border-amber-100">
+              <div class="text-[11px] font-bold text-amber-900 mb-1.5">$\mathbf{B}_G$ (변환값)</div>
+              <div id="grid-b-g" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix C_G -->
+            <div class="bg-emerald-50/40 p-2 rounded-xl border border-emerald-100">
+              <div class="text-[11px] font-bold text-emerald-900 mb-1.5">$\mathbf{C}_G$ (결과)</div>
+              <div id="grid-c-g" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BLUE CHANNEL BLOCK -->
+        <div id="block-channel-b" class="bg-white rounded-2xl border border-sky-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-sky-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-sky-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-sky-900">Blue 채널 연산 : $\mathbf{C}_B = \text{clamp}(\mathbf{A}_B + \mathbf{B}_B)$</h2>
+            </div>
+            <span class="text-[11px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded">파랑</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-center items-center">
+            <!-- Matrix A_B -->
+            <div class="bg-sky-50/40 p-2 rounded-xl border border-sky-100">
+              <div class="text-[11px] font-bold text-sky-900 mb-1.5">$\mathbf{A}_B$ (원본)</div>
+              <div id="grid-a-b" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix B_B -->
+            <div class="bg-amber-50/40 p-2 rounded-xl border border-amber-100">
+              <div class="text-[11px] font-bold text-amber-900 mb-1.5">$\mathbf{B}_B$ (변환값)</div>
+              <div id="grid-b-b" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix C_B -->
+            <div class="bg-emerald-50/40 p-2 rounded-xl border border-emerald-100">
+              <div class="text-[11px] font-bold text-emerald-900 mb-1.5">$\mathbf{C}_B$ (결과)</div>
+              <div id="grid-c-b" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 3: Right] Dual Rendered Canvases & 3D Vector Math Inspector (3.5 Cols) -->
+    <section class="lg:col-span-4 flex flex-col space-y-4">
+
+      <!-- Dual Rendered Images Comparison Card -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-slate-700"></span>
+            <h2 class="text-sm font-bold text-slate-800">컬러 이미지 변환 결과 비교</h2>
+          </div>
+          <button onclick="exportAllMatricesCSV()" class="text-xs px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-medium rounded-lg border border-slate-200 shadow-sm transition">
+            📊 CSV 복사
+          </button>
+        </div>
+
+        <div class="p-4 flex flex-col items-center justify-center bg-slate-100/50 space-y-4">
+          <!-- Side-by-Side 5x5 Canvases -->
+          <div class="grid grid-cols-2 gap-3 w-full">
+            <!-- Canvas A (Original RGB) -->
+            <div class="flex flex-col items-center bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm">
+              <span class="text-[11px] font-bold text-indigo-700 mb-1.5">원본 컬러 이미지 ($\mathbf{A}$)</span>
+              <canvas id="canvas-a" width="160" height="160" class="pixel-canvas rounded-lg w-[125px] h-[125px] border border-slate-200 cursor-pointer bg-white"></canvas>
+            </div>
+
+            <!-- Canvas C (Transformed RGB) -->
+            <div class="flex flex-col items-center bg-white p-2.5 rounded-xl border border-emerald-200 shadow-sm">
+              <span class="text-[11px] font-bold text-emerald-700 mb-1.5">변환 컬러 이미지 ($\mathbf{C}$)</span>
+              <canvas id="canvas-c" width="160" height="160" class="pixel-canvas rounded-lg w-[125px] h-[125px] border border-slate-200 cursor-pointer bg-white"></canvas>
+            </div>
+          </div>
+
+          <p class="text-[11px] text-slate-400 text-center leading-tight">💡 캔버스의 특정 화소를 클릭하면 해당 위치의 성분별 연산 수식이 아래에 표시됩니다.</p>
+        </div>
+
+        <!-- Selected Pixel 3D Vector Addition Formula Inspector -->
+        <div class="p-4 border-t border-slate-100 bg-white">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-slate-700">선택 픽셀 3차원 벡터 덧셈 수식</span>
+            <span id="selected-coord-text" class="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded text-slate-600">좌표 $(i=1, j=1)$</span>
+          </div>
+          <div id="pixel-math-formula" class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center text-xs sm:text-sm font-mono overflow-x-auto min-h-[90px] flex items-center justify-center">
+            <!-- KaTeX Formula dynamically injected -->
+          </div>
+        </div>
+
+        <!-- Clamping Stats Detector -->
+        <div class="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px]">
+          <span class="text-slate-500 font-medium">클램핑(포화) 발생 현황:</span>
+          <div class="flex items-center space-x-2 font-mono font-bold">
+            <span id="clamp-max-count" class="text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">255 초과: 0개</span>
+            <span id="clamp-min-count" class="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">0 미만: 0개</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 flex items-center space-x-2 pointer-events-none">
+    <span id="toast-icon">✨</span>
+    <span id="toast-message">알림</span>
+  </div>
+
+  <script>
+    const GRID_SIZE = 5;
+    let selectedPixel = { r: 0, c: 0 };
+    
+    // Offsets for R, G, B
+    let offsetR = 40;
+    let offsetG = 40;
+    let offsetB = 40;
+
+    // Tensor A: Original RGB 5x5 matrices
+    let matrixA_R = [];
+    let matrixA_G = [];
+    let matrixA_B = [];
+
+    // Tensor B: Brightness Offset 5x5 matrices
+    let matrixB_R = [];
+    let matrixB_G = [];
+    let matrixB_B = [];
+
+    // Tensor C: Result RGB 5x5 matrices = clamp(A + B)
+    let matrixC_R = [];
+    let matrixC_G = [];
+    let matrixC_B = [];
+
+    // Preset Data Generator
+    function getPresetData(type) {
+      const R = Array(5).fill(0).map(() => Array(5).fill(0));
+      const G = Array(5).fill(0).map(() => Array(5).fill(0));
+      const B = Array(5).fill(0).map(() => Array(5).fill(0));
+
+      if (type === 'color-heart') {
+        // Red Heart with warm glowing core
+        const heartMask = [
+          [0, 1, 0, 1, 0],
+          [1, 1, 1, 1, 1],
+          [1, 1, 1, 1, 1],
+          [0, 1, 1, 1, 0],
+          [0, 0, 1, 0, 0]
+        ];
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (heartMask[r][c] === 1) {
+              R[r][c] = (r === 2 && c === 2) ? 255 : 210;
+              G[r][c] = (r === 2 && c === 2) ? 80 : 30;
+              B[r][c] = (r === 2 && c === 2) ? 120 : 60;
+            } else {
+              R[r][c] = 20; G[r][c] = 20; B[r][c] = 30; // Dark background
+            }
+          }
+        }
+      } else if (type === 'sunset') {
+        // Sunset gradient from orange/red to purple/indigo
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            R[r][c] = Math.max(30, 240 - r * 45);
+            G[r][c] = Math.max(20, 140 - r * 30 + c * 5);
+            B[r][c] = Math.min(220, 40 + r * 40);
+          }
+        }
+      } else if (type === 'flower') {
+        // Flower with yellow core and pink/green petals
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (r === 2 && c === 2) {
+              R[r][c] = 250; G[r][c] = 210; B[r][c] = 40; // Yellow Core
+            } else if ((r === 1 || r === 3) && c === 2 || (c === 1 || c === 3) && r === 2) {
+              R[r][c] = 230; G[r][c] = 70; B[r][c] = 140; // Pink Petals
+            } else {
+              R[r][c] = 30; G[r][c] = 130; B[r][c] = 60; // Green Leaves
+            }
+          }
+        }
+      }
+      return { R, G, B };
+    }
+
+    // Initialize Matrices
+    function initData() {
+      const preset = getPresetData('color-heart');
+      matrixA_R = preset.R;
+      matrixA_G = preset.G;
+      matrixA_B = preset.B;
+
+      initMatrixB();
+      recalculateMatrixC();
+    }
+
+    function initMatrixB() {
+      matrixB_R = Array(5).fill(0).map(() => Array(5).fill(offsetR));
+      matrixB_G = Array(5).fill(0).map(() => Array(5).fill(offsetG));
+      matrixB_B = Array(5).fill(0).map(() => Array(5).fill(offsetB));
+    }
+
+    // Recalculate Tensor C = clamp(A + B, 0, 255)
+    function recalculateMatrixC() {
+      matrixC_R = Array(5).fill(0).map(() => Array(5).fill(0));
+      matrixC_G = Array(5).fill(0).map(() => Array(5).fill(0));
+      matrixC_B = Array(5).fill(0).map(() => Array(5).fill(0));
+
+      let clampMax = 0;
+      let clampMin = 0;
+
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const rawR = (matrixA_R[r][c] || 0) + (matrixB_R[r][c] || 0);
+          const rawG = (matrixA_G[r][c] || 0) + (matrixB_G[r][c] || 0);
+          const rawB = (matrixA_B[r][c] || 0) + (matrixB_B[r][c] || 0);
+
+          if (rawR > 255) clampMax++; if (rawR < 0) clampMin++;
+          if (rawG > 255) clampMax++; if (rawG < 0) clampMin++;
+          if (rawB > 255) clampMax++; if (rawB < 0) clampMin++;
+
+          matrixC_R[r][c] = Math.max(0, Math.min(255, rawR));
+          matrixC_G[r][c] = Math.max(0, Math.min(255, rawG));
+          matrixC_B[r][c] = Math.max(0, Math.min(255, rawB));
+        }
+      }
+
+      document.getElementById('clamp-max-count').innerText = `255 초과: ${clampMax}개`;
+      document.getElementById('clamp-min-count').innerText = `0 미만: ${clampMin}개`;
+    }
+
+    // DOM Loaded
+    window.addEventListener('DOMContentLoaded', () => {
+      initData();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      setupEventListeners();
+
+      if (window.renderMathInElement) {
+        renderMathInElement(document.body, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false}
+          ]
+        });
+      }
+    });
+
+    function setupEventListeners() {
+      // Master Slider
+      const masterSlider = document.getElementById('slider-master-offset');
+      masterSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        setMasterOffset(val, false);
+      });
+
+      // Individual Sliders
+      const sliderR = document.getElementById('slider-offset-r');
+      const sliderG = document.getElementById('slider-offset-g');
+      const sliderB = document.getElementById('slider-offset-b');
+
+      sliderR.addEventListener('input', (e) => {
+        offsetR = parseInt(e.target.value, 10);
+        document.getElementById('badge-offset-r').innerText = (offsetR >= 0 ? `+${offsetR}` : `${offsetR}`);
+        updateChannelOffsetMatrix('R', offsetR);
+      });
+
+      sliderG.addEventListener('input', (e) => {
+        offsetG = parseInt(e.target.value, 10);
+        document.getElementById('badge-offset-g').innerText = (offsetG >= 0 ? `+${offsetG}` : `${offsetG}`);
+        updateChannelOffsetMatrix('G', offsetG);
+      });
+
+      sliderB.addEventListener('input', (e) => {
+        offsetB = parseInt(e.target.value, 10);
+        document.getElementById('badge-offset-b').innerText = (offsetB >= 0 ? `+${offsetB}` : `${offsetB}`);
+        updateChannelOffsetMatrix('B', offsetB);
+      });
+
+      // Canvas Clicks
+      const canvasA = document.getElementById('canvas-a');
+      const canvasC = document.getElementById('canvas-c');
+
+      const handleCanvasClick = (canvas, e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const col = Math.floor(((e.clientX - rect.left) * scaleX) / (canvas.width / 5));
+        const row = Math.floor(((e.clientY - rect.top) * scaleY) / (canvas.height / 5));
+
+        if (row >= 0 && row < 5 && col >= 0 && col < 5) {
+          selectedPixel = { r: row, c: col };
+          updateSelectedPixelInspector();
+          highlightSelectedCell();
+        }
+      };
+
+      canvasA.addEventListener('click', (e) => handleCanvasClick(canvasA, e));
+      canvasC.addEventListener('click', (e) => handleCanvasClick(canvasC, e));
+    }
+
+    // Set Master Offset
+    function setMasterOffset(val, notify = true) {
+      offsetR = val;
+      offsetG = val;
+      offsetB = val;
+
+      document.getElementById('slider-master-offset').value = val;
+      document.getElementById('slider-master-val').innerText = (val >= 0 ? `+${val}` : `${val}`);
+      document.getElementById('master-offset-badge').innerText = (val >= 0 ? `+${val}` : `${val}`);
+
+      document.getElementById('slider-offset-r').value = val;
+      document.getElementById('slider-offset-g').value = val;
+      document.getElementById('slider-offset-b').value = val;
+      document.getElementById('badge-offset-r').innerText = (val >= 0 ? `+${val}` : `${val}`);
+      document.getElementById('badge-offset-g').innerText = (val >= 0 ? `+${val}` : `${val}`);
+      document.getElementById('badge-offset-b').innerText = (val >= 0 ? `+${val}` : `${val}`);
+
+      initMatrixB();
+      recalculateMatrixC();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+
+      if (notify) showToast(`밝기 변환 가중치가 ${val >= 0 ? '+' + val : val}로 설정되었습니다.`);
+    }
+
+    function syncAllChannelsToMaster() {
+      const val = parseInt(document.getElementById('slider-master-offset').value, 10);
+      setMasterOffset(val, true);
+    }
+
+    function updateChannelOffsetMatrix(channel, val) {
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          if (channel === 'R') matrixB_R[r][c] = val;
+          if (channel === 'G') matrixB_G[r][c] = val;
+          if (channel === 'B') matrixB_B[r][c] = val;
+        }
+      }
+      recalculateMatrixC();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+    }
+
+    // Render 5x5 Input Grids for All Channels
+    function renderAllGrids() {
+      renderSingleGrid('grid-a-r', matrixA_R, 'a-r', 'rose', false);
+      renderSingleGrid('grid-b-r', matrixB_R, 'b-r', 'amber', false);
+      renderSingleGrid('grid-c-r', matrixC_R, 'c-r', 'emerald', true);
+
+      renderSingleGrid('grid-a-g', matrixA_G, 'a-g', 'emerald', false);
+      renderSingleGrid('grid-b-g', matrixB_G, 'b-g', 'amber', false);
+      renderSingleGrid('grid-c-g', matrixC_G, 'c-g', 'emerald', true);
+
+      renderSingleGrid('grid-a-b', matrixA_B, 'a-b', 'sky', false);
+      renderSingleGrid('grid-b-b', matrixB_B, 'b-b', 'amber', false);
+      renderSingleGrid('grid-c-b', matrixC_B, 'c-b', 'emerald', true);
+
+      highlightSelectedCell();
+    }
+
+    function renderSingleGrid(containerId, matrix, tag, colorClass, isReadonly) {
+      const container = document.getElementById(containerId);
+      let html = '';
+
+      for (let r = 0; r < 5; r++) {
+        html += `<div class="flex gap-1 justify-center">`;
+        for (let c = 0; c < 5; c++) {
+          const val = matrix[r][c];
+          html += `
+            <input type="number" value="${val}"
+                   id="cell-${tag}-${r}-${c}"
+                   data-tag="${tag}" data-r="${r}" data-c="${c}"
+                   ${isReadonly ? 'readonly tabindex="-1"' : ''}
+                   onfocus="onCellFocus(${r}, ${c})"
+                   oninput="onCellInput(event, '${tag}', ${r}, ${c})"
+                   class="matrix-input w-8 h-7 text-[11px] text-center font-mono font-bold rounded border border-slate-200 focus:outline-none focus:ring-2 focus:ring-${colorClass}-500 ${isReadonly ? 'bg-emerald-50/70 text-emerald-950 cursor-default' : (colorClass === 'rose' ? 'bg-rose-50/60 text-rose-900' : (colorClass === 'emerald' ? 'bg-emerald-50/60 text-emerald-900' : (colorClass === 'sky' ? 'bg-sky-50/60 text-sky-900' : 'bg-amber-50/60 text-amber-900')))} transition-all">
+          `;
+        }
+        html += `</div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function onCellFocus(r, c) {
+      selectedPixel = { r, c };
+      updateSelectedPixelInspector();
+      highlightSelectedCell();
+    }
+
+    function onCellInput(event, tag, r, c) {
+      let val = parseInt(event.target.value, 10);
+      if (isNaN(val)) val = 0;
+
+      if (tag.startsWith('a-')) {
+        val = Math.max(0, Math.min(255, val));
+        event.target.value = val;
+        if (tag === 'a-r') matrixA_R[r][c] = val;
+        if (tag === 'a-g') matrixA_G[r][c] = val;
+        if (tag === 'a-b') matrixA_B[r][c] = val;
+      } else if (tag.startsWith('b-')) {
+        val = Math.max(-255, Math.min(255, val));
+        event.target.value = val;
+        if (tag === 'b-r') matrixB_R[r][c] = val;
+        if (tag === 'b-g') matrixB_G[r][c] = val;
+        if (tag === 'b-b') matrixB_B[r][c] = val;
+      }
+
+      recalculateMatrixC();
+
+      // Fast update DOM for result C
+      const cellCR = document.getElementById(`cell-c-r-${r}-${c}`);
+      const cellCG = document.getElementById(`cell-c-g-${r}-${c}`);
+      const cellCB = document.getElementById(`cell-c-b-${r}-${c}`);
+      if (cellCR) cellCR.value = matrixC_R[r][c];
+      if (cellCG) cellCG.value = matrixC_G[r][c];
+      if (cellCB) cellCB.value = matrixC_B[r][c];
+
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+    }
+
+    function highlightSelectedCell() {
+      document.querySelectorAll('.matrix-input').forEach(el => el.classList.remove('ring-2', 'ring-slate-900', 'scale-105'));
+      const { r, c } = selectedPixel;
+      const tags = ['a-r', 'b-r', 'c-r', 'a-g', 'b-g', 'c-g', 'a-b', 'b-b', 'c-b'];
+      tags.forEach(tag => {
+        const el = document.getElementById(`cell-${tag}-${r}-${c}`);
+        if (el) {
+          el.classList.add('ring-2', 'ring-slate-900', 'scale-105');
+        }
+      });
+    }
+
+    // Render Canvases A and C
+    function updateAllCanvases() {
+      renderColorCanvas('canvas-a', matrixA_R, matrixA_G, matrixA_B);
+      renderColorCanvas('canvas-c', matrixC_R, matrixC_G, matrixC_B);
+    }
+
+    function renderColorCanvas(canvasId, matR, matG, matB) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      const width = canvas.width;
+      const height = canvas.height;
+      const cellW = width / 5;
+      const cellH = height / 5;
+
+      ctx.clearRect(0, 0, width, height);
+
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const red = matR[r][c] || 0;
+          const green = matG[r][c] || 0;
+          const blue = matB[r][c] || 0;
+
+          ctx.fillStyle = `rgb(${red}, ${green}, ${blue})`;
+          ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+
+          // Grid lines
+          ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+        }
+      }
+    }
+
+    // Update Selected Pixel Inspector and LaTeX Formula
+    function updateSelectedPixelInspector() {
+      const { r, c } = selectedPixel;
+
+      const aR = matrixA_R[r][c], aG = matrixA_G[r][c], aB = matrixA_B[r][c];
+      const bR = matrixB_R[r][c], bG = matrixB_G[r][c], bB = matrixB_B[r][c];
+      const cR = matrixC_R[r][c], cG = matrixC_G[r][c], cB = matrixC_B[r][c];
+
+      // Update Left Sidebar Preview
+      document.getElementById('selected-pixel-coords').innerText = `(${r + 1}, ${c + 1})`;
+      document.getElementById('preview-pixel-a').style.backgroundColor = `rgb(${aR}, ${aG}, ${aB})`;
+      document.getElementById('preview-pixel-c').style.backgroundColor = `rgb(${cR}, ${cG}, ${cB})`;
+      document.getElementById('text-pixel-a').innerText = `(${aR}, ${aG}, ${aB})`;
+      document.getElementById('text-pixel-c').innerText = `(${cR}, ${cG}, ${cB})`;
+
+      // Update Right Inspector Formula
+      const coordBadge = document.getElementById('selected-coord-text');
+      coordBadge.innerHTML = `좌표 $(i=${r + 1}, j=${c + 1})$`;
+
+      const formulaBox = document.getElementById('pixel-math-formula');
+      
+      const bSignR = bR >= 0 ? `+ ${bR}` : `- ${Math.abs(bR)}`;
+      const bSignG = bG >= 0 ? `+ ${bG}` : `- ${Math.abs(bG)}`;
+      const bSignB = bB >= 0 ? `+ ${bB}` : `- ${Math.abs(bB)}`;
+
+      formulaBox.innerHTML = `$$\\mathbf{C}_{${r+1},${c+1}} = \\text{clamp}\\left(\\begin{bmatrix} ${aR} \\\\ ${aG} \\\\ ${aB} \\end{bmatrix} + \\begin{bmatrix} ${bR} \\\\ ${bG} \\\\ ${bB} \\end{bmatrix}\\right) = \\begin{bmatrix} \\text{clamp}(${aR}${bSignR}) \\\\ \\text{clamp}(${aG}${bSignG}) \\\\ \\text{clamp}(${aB}${bSignB}) \\end{bmatrix} = \\begin{bmatrix} ${cR} \\\\ ${cG} \\\\ ${cB} \\end{bmatrix}$$`;
+
+      if (window.renderMathInElement) {
+        renderMathInElement(coordBadge, { delimiters: [{left: '$', right: '$', display: false}] });
+        renderMathInElement(formulaBox, { delimiters: [{left: '$$', right: '$$', display: true}] });
+      }
+    }
+
+    // Presets
+    function loadPreset(type) {
+      const preset = getPresetData(type);
+      matrixA_R = preset.R;
+      matrixA_G = preset.G;
+      matrixA_B = preset.B;
+
+      setMasterOffset(40, false);
+      showToast('새로운 이미지 프리셋을 불러왔습니다.');
+    }
+
+    function resetAll() {
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          matrixA_R[r][c] = 0;
+          matrixA_G[r][c] = 0;
+          matrixA_B[r][c] = 0;
+        }
+      }
+      setMasterOffset(0, false);
+      showToast('모든 행렬 데이터가 0으로 초기화되었습니다.');
+    }
+
+    // Switch Channel View Tabs
+    function switchChannelView(view) {
+      const blockR = document.getElementById('block-channel-r');
+      const blockG = document.getElementById('block-channel-g');
+      const blockB = document.getElementById('block-channel-b');
+
+      document.querySelectorAll('.ch-tab-btn').forEach(btn => {
+        btn.classList.remove('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+        btn.classList.add('text-slate-600');
+      });
+
+      if (view === 'all') {
+        blockR.classList.remove('hidden');
+        blockG.classList.remove('hidden');
+        blockB.classList.remove('hidden');
+        document.getElementById('tab-btn-all').classList.add('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+      } else if (view === 'r') {
+        blockR.classList.remove('hidden');
+        blockG.classList.add('hidden');
+        blockB.classList.add('hidden');
+        document.getElementById('tab-btn-r').classList.add('bg-white', 'shadow', 'text-rose-600', 'font-semibold');
+      } else if (view === 'g') {
+        blockR.classList.add('hidden');
+        blockG.classList.remove('hidden');
+        blockB.classList.add('hidden');
+        document.getElementById('tab-btn-g').classList.add('bg-white', 'shadow', 'text-emerald-600', 'font-semibold');
+      } else if (view === 'b') {
+        blockR.classList.add('hidden');
+        blockG.classList.add('hidden');
+        blockB.classList.remove('hidden');
+        document.getElementById('tab-btn-b').classList.add('bg-white', 'shadow', 'text-sky-600', 'font-semibold');
+      }
+    }
+
+    // Export Matrices CSV
+    function exportAllMatricesCSV() {
+      let csv = `=== Matrix A (Original RGB Tensor 5x5x3) ===\n`;
+      csv += `[Red Channel A_R]\n` + matrixA_R.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Green Channel A_G]\n` + matrixA_G.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Blue Channel A_B]\n` + matrixA_B.map(row => row.join(',')).join('\n') + `\n\n`;
+
+      csv += `=== Matrix B (Brightness Offset Tensor 5x5x3) ===\n`;
+      csv += `[Offset B_R]\n` + matrixB_R.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Offset B_G]\n` + matrixB_G.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Offset B_B]\n` + matrixB_B.map(row => row.join(',')).join('\n') + `\n\n`;
+
+      csv += `=== Matrix C (Result RGB Tensor 5x5x3) ===\n`;
+      csv += `[Red Channel C_R]\n` + matrixC_R.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Green Channel C_G]\n` + matrixC_G.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Blue Channel C_B]\n` + matrixC_B.map(row => row.join(',')).join('\n') + `\n`;
+
+      const tempTextArea = document.createElement('textarea');
+      tempTextArea.value = csv;
+      document.body.appendChild(tempTextArea);
+      tempTextArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempTextArea);
+
+      showToast('📋 전체 RGB 텐서 CSV 데이터가 복사되었습니다.');
+    }
+
+    function showToast(msg, icon = '✨') {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-icon').innerText = icon;
+      document.getElementById('toast-message').innerText = msg;
+      
+      toast.classList.remove('opacity-0', 'translate-y-[-100px]');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'translate-y-[-100px]');
+      }, 2400);
+    }
+  </script>
+</body>
+</html>

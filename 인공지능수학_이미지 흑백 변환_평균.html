@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>인공지능 수학 - 컬러 to 흑백 변환 (선형 결합 & 벡터 내적)</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f8fafc',
+              100: '#f1f5f9',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- KaTeX for Mathematical Formulas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    
+    .matrix-input::-webkit-outer-spin-button,
+    .matrix-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .matrix-input {
+      -moz-appearance: textfield;
+    }
+    
+    .pixel-canvas {
+      image-rendering: pixelated;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-[1700px] mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-500 via-emerald-500 to-slate-800 flex items-center justify-center text-white font-bold shadow-sm text-base">
+          $\mathbf{w}^T\mathbf{x}$
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold text-slate-900 leading-tight">인공지능 수학 : 컬러 이미지($5 \times 5$)의 흑백(Grayscale) 변환과 선형 결합</h1>
+          <p class="text-xs text-slate-500">채널 가중치 벡터 내적 $Y_{i,j} = \text{round}(w_R R_{i,j} + w_G G_{i,j} + w_B B_{i,j}) = \mathbf{w}^T \mathbf{P}_{i,j}$ 탐구</p>
+        </div>
+      </div>
+
+      <!-- Preset Controls -->
+      <div class="flex items-center space-x-1.5">
+        <button onclick="loadPreset('color-heart')" class="px-2.5 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 shadow-sm transition">💖 컬러 하트</button>
+        <button onclick="loadPreset('sunset')" class="px-2.5 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 shadow-sm transition">🌅 석양 그라데이션</button>
+        <button onclick="loadPreset('flower')" class="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 shadow-sm transition">🌸 꽃 패턴</button>
+        <button onclick="resetAll()" class="px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-rose-50 hover:text-rose-600 shadow-sm transition">🔄 초기화</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main 3-Column Layout -->
+  <main class="max-w-[1700px] mx-auto px-4 sm:px-6 py-4 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+    <!-- [COLUMN 1: Left] Weight Vector Presets & Channel Sliders (3 Cols) -->
+    <section class="lg:col-span-3 flex flex-col space-y-4">
+      
+      <!-- Conversion Mode & Weights Preset Card -->
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+          <div class="flex items-center space-x-2">
+            <span class="text-base">⚖️</span>
+            <h2 class="text-sm font-bold text-slate-800">가중치 벡터 ($\mathbf{w}$) 설정</h2>
+          </div>
+          <span id="weight-sum-badge" class="text-xs font-mono font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded border border-emerald-200">합계 $\Sigma = 1.00$</span>
+        </div>
+
+        <!-- Conversion Standard Presets -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-bold text-slate-700 block">표준 흑백 변환 공식 선택</label>
+          <div class="grid grid-cols-1 gap-1.5">
+            <button onclick="applyWeightPreset('bt601')" id="btn-preset-bt601" class="preset-mode-btn p-2 text-left text-xs bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 transition shadow-sm font-medium text-slate-700">
+              <div class="flex items-center justify-between font-bold text-slate-800">
+                <span>표준 명도 (ITU-R BT.601)</span>
+                <span class="text-[10px] bg-slate-200/80 px-1.5 py-0.5 rounded text-slate-700">방송표준</span>
+              </div>
+              <p class="text-[11px] text-slate-500 mt-0.5 font-mono">$Y = 0.299R + 0.587G + 0.114B$</p>
+            </button>
+
+            <button onclick="applyWeightPreset('bt709')" id="btn-preset-bt709" class="preset-mode-btn p-2 text-left text-xs bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 transition shadow-sm font-medium text-slate-700">
+              <div class="font-bold text-slate-800">HDTV 표준 (ITU-R BT.709)</div>
+              <p class="text-[11px] text-slate-500 mt-0.5 font-mono">$Y = 0.2126R + 0.7152G + 0.0722B$</p>
+            </button>
+
+            <button onclick="applyWeightPreset('average')" id="btn-preset-average" class="preset-mode-btn p-2 text-left text-xs bg-indigo-50 border border-indigo-200 rounded-xl hover:bg-indigo-100 transition shadow-sm font-medium">
+              <div class="flex items-center justify-between font-bold text-indigo-900">
+                <span>단순 산술 평균 (Average)</span>
+                <span class="text-[10px] bg-indigo-200/80 px-1.5 py-0.5 rounded text-indigo-900">기본값</span>
+              </div>
+              <p class="text-[11px] text-indigo-700 mt-0.5 font-mono">$Y = \frac{1}{3}R + \frac{1}{3}G + \frac{1}{3}B \approx 0.333(R+G+B)$</p>
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom Channel Weight Sliders -->
+        <div class="space-y-3 bg-slate-50/80 p-3 rounded-xl border border-slate-200/80">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-700">가중치 수동 조절 (가중합)</span>
+            <div class="flex items-center space-x-1.5">
+              <button onclick="applyWeightPreset('average')" class="text-[10px] text-slate-700 hover:text-indigo-600 hover:bg-slate-100 font-semibold bg-white px-1.5 py-0.5 rounded border border-slate-200 shadow-sm transition">1/3 평균</button>
+              <button onclick="normalizeWeights()" class="text-[10px] text-indigo-700 hover:bg-indigo-100 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 shadow-sm transition">합=1로 정규화</button>
+            </div>
+          </div>
+
+          <!-- Weight R -->
+          <div class="flex items-center justify-between text-xs space-x-2">
+            <span class="font-bold text-rose-600 w-14 flex-shrink-0">Red ($w_R$)</span>
+            <input type="range" id="slider-w-r" min="0" max="1000" step="1" value="333" class="flex-1 h-1.5 accent-rose-500 cursor-pointer">
+            <span id="badge-w-r" class="font-mono text-[11px] w-12 text-right font-bold text-rose-700">0.333</span>
+          </div>
+
+          <!-- Weight G -->
+          <div class="flex items-center justify-between text-xs space-x-2">
+            <span class="font-bold text-emerald-600 w-14 flex-shrink-0">Grn ($w_G$)</span>
+            <input type="range" id="slider-w-g" min="0" max="1000" step="1" value="334" class="flex-1 h-1.5 accent-emerald-500 cursor-pointer">
+            <span id="badge-w-g" class="font-mono text-[11px] w-12 text-right font-bold text-emerald-700">0.334</span>
+          </div>
+
+          <!-- Weight B -->
+          <div class="flex items-center justify-between text-xs space-x-2">
+            <span class="font-bold text-sky-600 w-14 flex-shrink-0">Blu ($w_B$)</span>
+            <input type="range" id="slider-w-b" min="0" max="1000" step="1" value="333" class="flex-1 h-1.5 accent-sky-500 cursor-pointer">
+            <span id="badge-w-b" class="font-mono text-[11px] w-12 text-right font-bold text-sky-700">0.333</span>
+          </div>
+        </div>
+
+        <!-- Selected Pixel Color vs Grayscale Inspector -->
+        <div class="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 flex flex-col space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-indigo-900">선택 픽셀 색상 비교</span>
+            <span id="selected-pixel-coords" class="text-[11px] font-mono text-indigo-700 font-bold">(1, 1)</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-center">
+            <div class="bg-white p-2 rounded-lg border border-indigo-100 shadow-sm flex flex-col items-center">
+              <span class="text-[10px] text-slate-500 mb-1">원본 컬러 ($\mathbf{A}$)</span>
+              <div id="preview-pixel-a" class="w-10 h-10 rounded-md border border-slate-200 shadow-inner"></div>
+              <span id="text-pixel-a" class="text-[10px] font-mono font-bold mt-1 text-slate-700">(0,0,0)</span>
+            </div>
+            <div class="bg-white p-2 rounded-lg border border-indigo-100 shadow-sm flex flex-col items-center">
+              <span class="text-[10px] text-slate-500 mb-1">변환 흑백 ($Y$)</span>
+              <div id="preview-pixel-y" class="w-10 h-10 rounded-md border border-slate-200 shadow-inner"></div>
+              <span id="text-pixel-y" class="text-[10px] font-mono font-bold mt-1 text-slate-700">0</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- AI Math Guide Note -->
+      <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-2xl shadow-sm space-y-2">
+        <div class="flex items-center space-x-2">
+          <span class="text-indigo-400 font-bold text-sm">💡 AI 수학 개념: 선형 결합과 벡터 내적</span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          컬러 이미지의 한 화소 $\mathbf{P} = [R, G, B]^T$를 흑백 밝기 스칼라 $Y$로 변환하는 것은 가중치 벡터 $\mathbf{w} = [w_R, w_G, w_B]^T$와의 <strong class="text-indigo-300">선형 결합(Linear Combination)</strong> 또는 <strong class="text-amber-300">벡터 내적(Dot Product)</strong>으로 표현됩니다:
+          $$Y = \mathbf{w} \cdot \mathbf{P} = \mathbf{w}^T \mathbf{P} = w_R R + w_G G + w_B B$$
+          인간의 눈은 초록색($G$) 광수용체에 가장 민감하여 $w_G \approx 0.587$로 가장 높은 가중치를 부여합니다.
+        </p>
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 2: Center] 5x5 R, G, B Matrices and Result Grayscale Matrix Y (5.5 Cols) -->
+    <section class="lg:col-span-5 flex flex-col space-y-3">
+      
+      <!-- Channel Selector Tabs -->
+      <div class="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
+          <button id="tab-btn-all" onclick="switchChannelView('all')" class="ch-tab-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white shadow text-slate-900">RGB 3채널 + 흑백($Y$)</button>
+          <button id="tab-btn-r" onclick="switchChannelView('r')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-rose-600 hover:bg-white/60">Red ($\mathbf{A}_R$)</button>
+          <button id="tab-btn-g" onclick="switchChannelView('g')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-emerald-600 hover:bg-white/60">Green ($\mathbf{A}_G$)</button>
+          <button id="tab-btn-b" onclick="switchChannelView('b')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-sky-600 hover:bg-white/60">Blue ($\mathbf{A}_B$)</button>
+          <button id="tab-btn-y" onclick="switchChannelView('y')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-slate-800 hover:bg-white/60">Grayscale ($\mathbf{Y}$)</button>
+        </div>
+
+        <div class="text-[11px] text-slate-400 font-medium">
+          크기: <span class="font-bold text-indigo-600">5 × 5 고정 실습</span>
+        </div>
+      </div>
+
+      <!-- Matrices Scroll Area -->
+      <div id="matrices-wrapper" class="space-y-4 flex-1 overflow-y-auto max-h-[calc(100vh-140px)] pr-1">
+        
+        <!-- RGB INPUT MATRICES OVERVIEW -->
+        <div id="block-input-channels" class="space-y-3">
+          <!-- RED CHANNEL BLOCK -->
+          <div id="block-channel-r" class="bg-white rounded-2xl border border-rose-200 shadow-sm p-3.5 space-y-2">
+            <div class="flex items-center justify-between border-b border-rose-100 pb-1.5">
+              <div class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded-full bg-rose-500 shadow-sm"></span>
+                <h2 class="text-xs sm:text-sm font-bold text-rose-900">Red 원본 행렬 $\mathbf{A}_R$ $\times$ 가중치 $w_R$ (<span id="text-inline-wr" class="font-mono text-rose-600 font-bold">0.333</span>)</h2>
+              </div>
+              <span class="text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">빨강 화소</span>
+            </div>
+            <div class="p-1 flex justify-center">
+              <div id="grid-a-r" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+
+          <!-- GREEN CHANNEL BLOCK -->
+          <div id="block-channel-g" class="bg-white rounded-2xl border border-emerald-200 shadow-sm p-3.5 space-y-2">
+            <div class="flex items-center justify-between border-b border-emerald-100 pb-1.5">
+              <div class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded-full bg-emerald-500 shadow-sm"></span>
+                <h2 class="text-xs sm:text-sm font-bold text-emerald-900">Green 원본 행렬 $\mathbf{A}_G$ $\times$ 가중치 $w_G$ (<span id="text-inline-wg" class="font-mono text-emerald-600 font-bold">0.334</span>)</h2>
+              </div>
+              <span class="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">초록 화소</span>
+            </div>
+            <div class="p-1 flex justify-center">
+              <div id="grid-a-g" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+
+          <!-- BLUE CHANNEL BLOCK -->
+          <div id="block-channel-b" class="bg-white rounded-2xl border border-sky-200 shadow-sm p-3.5 space-y-2">
+            <div class="flex items-center justify-between border-b border-sky-100 pb-1.5">
+              <div class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded-full bg-sky-500 shadow-sm"></span>
+                <h2 class="text-xs sm:text-sm font-bold text-sky-900">Blue 원본 행렬 $\mathbf{A}_B$ $\times$ 가중치 $w_B$ (<span id="text-inline-wb" class="font-mono text-sky-600 font-bold">0.333</span>)</h2>
+              </div>
+              <span class="text-[11px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded">파랑 화소</span>
+            </div>
+            <div class="p-1 flex justify-center">
+              <div id="grid-a-b" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RESULT GRAYSCALE MATRIX Y BLOCK -->
+        <div id="block-channel-y" class="bg-white rounded-2xl border-2 border-slate-700 shadow-md p-3.5 space-y-2 bg-gradient-to-b from-slate-50 to-white">
+          <div class="flex items-center justify-between border-b border-slate-200 pb-1.5">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-slate-900 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-slate-900">최종 흑백 결과 행렬 $\mathbf{Y} = \text{round}(w_R\mathbf{A}_R + w_G\mathbf{A}_G + w_B\mathbf{A}_B)$</h2>
+            </div>
+            <span class="text-[11px] font-bold text-slate-800 bg-slate-200 px-2 py-0.5 rounded">Grayscale</span>
+          </div>
+          <div class="p-1 flex justify-center">
+            <div id="grid-matrix-y" class="inline-grid gap-1"></div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 3: Right] Dual Canvases & KaTeX Linear Combination Inspector (3.5 Cols) -->
+    <section class="lg:col-span-4 flex flex-col space-y-4">
+
+      <!-- Dual Rendered Images Comparison Card -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-slate-700"></span>
+            <h2 class="text-sm font-bold text-slate-800">컬러 vs 흑백 렌더링 비교</h2>
+          </div>
+          <button onclick="exportAllMatricesCSV()" class="text-xs px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-medium rounded-lg border border-slate-200 shadow-sm transition">
+            📊 CSV 복사
+          </button>
+        </div>
+
+        <div class="p-4 flex flex-col items-center justify-center bg-slate-100/50 space-y-4">
+          <!-- Side-by-Side 5x5 Canvases -->
+          <div class="grid grid-cols-2 gap-3 w-full">
+            <!-- Canvas A (Original RGB) -->
+            <div class="flex flex-col items-center bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm">
+              <span class="text-[11px] font-bold text-indigo-700 mb-1.5">원본 컬러 이미지 ($\mathbf{A}$)</span>
+              <canvas id="canvas-a" width="160" height="160" class="pixel-canvas rounded-lg w-[125px] h-[125px] border border-slate-200 cursor-pointer bg-white"></canvas>
+            </div>
+
+            <!-- Canvas Y (Converted Grayscale) -->
+            <div class="flex flex-col items-center bg-white p-2.5 rounded-xl border border-slate-700 shadow-sm">
+              <span class="text-[11px] font-bold text-slate-800 mb-1.5">변환 흑백 이미지 ($\mathbf{Y}$)</span>
+              <canvas id="canvas-y" width="160" height="160" class="pixel-canvas rounded-lg w-[125px] h-[125px] border border-slate-300 cursor-pointer bg-white"></canvas>
+            </div>
+          </div>
+
+          <p class="text-[11px] text-slate-400 text-center leading-tight">💡 캔버스의 특정 화소를 클릭하면 해당 위치의 벡터 내적 및 선형 결합 수식이 아래에 표시됩니다.</p>
+        </div>
+
+        <!-- Selected Pixel Dot Product Formula Inspector -->
+        <div class="p-4 border-t border-slate-100 bg-white">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-slate-700">선택 픽셀 벡터 내적 ($\mathbf{w}^T\mathbf{P}$) 수식</span>
+            <span id="selected-coord-text" class="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded text-slate-600">좌표 $(i=1, j=1)$</span>
+          </div>
+          <div id="pixel-math-formula" class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center text-xs sm:text-sm font-mono overflow-x-auto min-h-[95px] flex items-center justify-center">
+            <!-- KaTeX Formula dynamically injected -->
+          </div>
+        </div>
+
+        <!-- Brightness Metrics Stats -->
+        <div class="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px]">
+          <span class="text-slate-500 font-medium">전체 평균 명도 ($\bar{Y}$):</span>
+          <div class="flex items-center space-x-2 font-mono font-bold">
+            <span id="stat-avg-brightness" class="text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">평균: 0.0</span>
+            <span id="stat-max-brightness" class="text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">최대: 0 / 최소: 0</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 flex items-center space-x-2 pointer-events-none">
+    <span id="toast-icon">✨</span>
+    <span id="toast-message">알림</span>
+  </div>
+
+  <!-- JavaScript Logic -->
+  <script>
+    const GRID_SIZE = 5;
+    let selectedPixel = { r: 0, c: 0 };
+    
+    // Weights for R, G, B (Default: 1/3 Average)
+    let weightR = 0.333;
+    let weightG = 0.334;
+    let weightB = 0.333;
+
+    // Tensor A: Original RGB 5x5 matrices (0 ~ 255)
+    let matrixA_R = [];
+    let matrixA_G = [];
+    let matrixA_B = [];
+
+    // Matrix Y: Result Grayscale 5x5 matrix = round(wR*R + wG*G + wB*B)
+    let matrixY = [];
+
+    // Preset Data Generator
+    function getPresetData(type) {
+      const R = Array(5).fill(0).map(() => Array(5).fill(0));
+      const G = Array(5).fill(0).map(() => Array(5).fill(0));
+      const B = Array(5).fill(0).map(() => Array(5).fill(0));
+
+      if (type === 'color-heart') {
+        const heartMask = [
+          [0, 1, 0, 1, 0],
+          [1, 1, 1, 1, 1],
+          [1, 1, 1, 1, 1],
+          [0, 1, 1, 1, 0],
+          [0, 0, 1, 0, 0]
+        ];
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (heartMask[r][c] === 1) {
+              R[r][c] = (r === 2 && c === 2) ? 255 : 210;
+              G[r][c] = (r === 2 && c === 2) ? 70 : 30;
+              B[r][c] = (r === 2 && c === 2) ? 110 : 60;
+            } else {
+              R[r][c] = 20; G[r][c] = 20; B[r][c] = 30;
+            }
+          }
+        }
+      } else if (type === 'sunset') {
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            R[r][c] = Math.max(20, 240 - r * 45);
+            G[r][c] = Math.max(10, 140 - r * 30 + c * 5);
+            B[r][c] = Math.min(220, 40 + r * 40);
+          }
+        }
+      } else if (type === 'flower') {
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (r === 2 && c === 2) {
+              R[r][c] = 250; G[r][c] = 210; B[r][c] = 40; // Yellow Core
+            } else if ((r === 1 || r === 3) && c === 2 || (c === 1 || c === 3) && r === 2) {
+              R[r][c] = 230; G[r][c] = 70; B[r][c] = 140; // Pink Petals
+            } else {
+              R[r][c] = 30; G[r][c] = 130; B[r][c] = 60; // Green Leaves
+            }
+          }
+        }
+      }
+      return { R, G, B };
+    }
+
+    function initData() {
+      const preset = getPresetData('color-heart');
+      matrixA_R = preset.R;
+      matrixA_G = preset.G;
+      matrixA_B = preset.B;
+
+      recalculateMatrixY();
+    }
+
+    // Recalculate Matrix Y = round(wR*R + wG*G + wB*B)
+    function recalculateMatrixY() {
+      matrixY = Array(5).fill(0).map(() => Array(5).fill(0));
+
+      let sumBrightness = 0;
+      let maxB = 0;
+      let minB = 255;
+
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const rVal = matrixA_R[r][c] || 0;
+          const gVal = matrixA_G[r][c] || 0;
+          const bVal = matrixA_B[r][c] || 0;
+
+          const rawY = Math.round(weightR * rVal + weightG * gVal + weightB * bVal);
+          const clampedY = Math.max(0, Math.min(255, rawY));
+          
+          matrixY[r][c] = clampedY;
+
+          sumBrightness += clampedY;
+          if (clampedY > maxB) maxB = clampedY;
+          if (clampedY < minB) minB = clampedY;
+        }
+      }
+
+      const avgBrightness = (sumBrightness / 25).toFixed(1);
+      document.getElementById('stat-avg-brightness').innerText = `평균: ${avgBrightness}`;
+      document.getElementById('stat-max-brightness').innerText = `최대: ${maxB} / 최소: ${minB}`;
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initData();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      setupEventListeners();
+
+      if (window.renderMathInElement) {
+        renderMathInElement(document.body, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false}
+          ]
+        });
+      }
+    });
+
+    function setupEventListeners() {
+      // Individual Weight Sliders
+      const sliderR = document.getElementById('slider-w-r');
+      const sliderG = document.getElementById('slider-w-g');
+      const sliderB = document.getElementById('slider-w-b');
+
+      sliderR.addEventListener('input', (e) => {
+        weightR = parseFloat((parseInt(e.target.value, 10) / 1000).toFixed(3));
+        document.getElementById('badge-w-r').innerText = weightR.toFixed(3);
+        updateWeightDisplays();
+        recalculateMatrixY();
+        renderSingleGrid('grid-matrix-y', matrixY, 'y', 'slate', true);
+        updateAllCanvases();
+        updateSelectedPixelInspector();
+        highlightCustomPreset();
+      });
+
+      sliderG.addEventListener('input', (e) => {
+        weightG = parseFloat((parseInt(e.target.value, 10) / 1000).toFixed(3));
+        document.getElementById('badge-w-g').innerText = weightG.toFixed(3);
+        updateWeightDisplays();
+        recalculateMatrixY();
+        renderSingleGrid('grid-matrix-y', matrixY, 'y', 'slate', true);
+        updateAllCanvases();
+        updateSelectedPixelInspector();
+        highlightCustomPreset();
+      });
+
+      sliderB.addEventListener('input', (e) => {
+        weightB = parseFloat((parseInt(e.target.value, 10) / 1000).toFixed(3));
+        document.getElementById('badge-w-b').innerText = weightB.toFixed(3);
+        updateWeightDisplays();
+        recalculateMatrixY();
+        renderSingleGrid('grid-matrix-y', matrixY, 'y', 'slate', true);
+        updateAllCanvases();
+        updateSelectedPixelInspector();
+        highlightCustomPreset();
+      });
+
+      // Canvas Clicks
+      const canvasA = document.getElementById('canvas-a');
+      const canvasY = document.getElementById('canvas-y');
+
+      const handleCanvasClick = (canvas, e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const col = Math.floor(((e.clientX - rect.left) * scaleX) / (canvas.width / 5));
+        const row = Math.floor(((e.clientY - rect.top) * scaleY) / (canvas.height / 5));
+
+        if (row >= 0 && row < 5 && col >= 0 && col < 5) {
+          selectedPixel = { r: row, c: col };
+          updateSelectedPixelInspector();
+          highlightSelectedCell();
+        }
+      };
+
+      canvasA.addEventListener('click', (e) => handleCanvasClick(canvasA, e));
+      canvasY.addEventListener('click', (e) => handleCanvasClick(canvasY, e));
+    }
+
+    function applyWeightPreset(type) {
+      document.querySelectorAll('.preset-mode-btn').forEach(b => {
+        b.classList.remove('bg-indigo-50', 'border-indigo-200', 'text-indigo-900');
+        b.classList.add('bg-slate-50', 'border-slate-200', 'text-slate-700');
+      });
+
+      if (type === 'bt601') {
+        weightR = 0.299;
+        weightG = 0.587;
+        weightB = 0.114;
+        const btn = document.getElementById('btn-preset-bt601');
+        btn.classList.add('bg-indigo-50', 'border-indigo-200');
+        btn.classList.remove('bg-slate-50', 'border-slate-200');
+        showToast('표준 명도 변환 공식(ITU-R BT.601)이 적용되었습니다.');
+      } else if (type === 'bt709') {
+        weightR = 0.213;
+        weightG = 0.715;
+        weightB = 0.072;
+        const btn = document.getElementById('btn-preset-bt709');
+        btn.classList.add('bg-indigo-50', 'border-indigo-200');
+        btn.classList.remove('bg-slate-50', 'border-slate-200');
+        showToast('HDTV 표준 명도 공식(BT.709)이 적용되었습니다.');
+      } else if (type === 'average') {
+        weightR = 0.333;
+        weightG = 0.334;
+        weightB = 0.333;
+        const btn = document.getElementById('btn-preset-average');
+        btn.classList.add('bg-indigo-50', 'border-indigo-200');
+        btn.classList.remove('bg-slate-50', 'border-slate-200');
+        showToast('단순 산술 평균(1/3) 가중치가 적용되었습니다.');
+      }
+
+      setSlidersFromWeights();
+      updateWeightDisplays();
+      recalculateMatrixY();
+      renderSingleGrid('grid-matrix-y', matrixY, 'y', 'slate', true);
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+    }
+
+    function highlightCustomPreset() {
+      document.querySelectorAll('.preset-mode-btn').forEach(b => {
+        b.classList.remove('bg-indigo-50', 'border-indigo-200');
+        b.classList.add('bg-slate-50', 'border-slate-200');
+      });
+    }
+
+    function setSlidersFromWeights() {
+      document.getElementById('slider-w-r').value = Math.round(weightR * 1000);
+      document.getElementById('slider-w-g').value = Math.round(weightG * 1000);
+      document.getElementById('slider-w-b').value = Math.round(weightB * 1000);
+      document.getElementById('badge-w-r').innerText = weightR.toFixed(3);
+      document.getElementById('badge-w-g').innerText = weightG.toFixed(3);
+      document.getElementById('badge-w-b').innerText = weightB.toFixed(3);
+    }
+
+    function updateWeightDisplays() {
+      const sum = (weightR + weightG + weightB).toFixed(3);
+      const sumBadge = document.getElementById('weight-sum-badge');
+      sumBadge.innerHTML = `합계 $\\Sigma = ${sum}$`;
+
+      document.getElementById('text-inline-wr').innerText = weightR.toFixed(3);
+      document.getElementById('text-inline-wg').innerText = weightG.toFixed(3);
+      document.getElementById('text-inline-wb').innerText = weightB.toFixed(3);
+
+      if (window.renderMathInElement) {
+        renderMathInElement(sumBadge, { delimiters: [{left: '$', right: '$', display: false}] });
+      }
+    }
+
+    function normalizeWeights() {
+      const total = weightR + weightG + weightB;
+      if (total === 0) {
+        weightR = 0.333; weightG = 0.334; weightB = 0.333;
+      } else {
+        weightR = parseFloat((weightR / total).toFixed(3));
+        weightG = parseFloat((weightG / total).toFixed(3));
+        weightB = parseFloat((1.0 - weightR - weightG).toFixed(3));
+      }
+      setSlidersFromWeights();
+      updateWeightDisplays();
+      recalculateMatrixY();
+      renderSingleGrid('grid-matrix-y', matrixY, 'y', 'slate', true);
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      showToast('가중치의 합계가 1.000으로 정규화되었습니다.');
+    }
+
+    function renderAllGrids() {
+      renderSingleGrid('grid-a-r', matrixA_R, 'a-r', 'rose', false);
+      renderSingleGrid('grid-a-g', matrixA_G, 'a-g', 'emerald', false);
+      renderSingleGrid('grid-a-b', matrixA_B, 'a-b', 'sky', false);
+      renderSingleGrid('grid-matrix-y', matrixY, 'y', 'slate', true);
+
+      highlightSelectedCell();
+    }
+
+    function renderSingleGrid(containerId, matrix, tag, colorClass, isReadonly) {
+      const container = document.getElementById(containerId);
+      let html = '';
+
+      for (let r = 0; r < 5; r++) {
+        html += `<div class="flex gap-1 justify-center">`;
+        for (let c = 0; c < 5; c++) {
+          const val = matrix[r][c];
+          html += `
+            <input type="number" value="${val}"
+                   id="cell-${tag}-${r}-${c}"
+                   data-tag="${tag}" data-r="${r}" data-c="${c}"
+                   ${isReadonly ? 'readonly tabindex="-1"' : ''}
+                   onfocus="onCellFocus(${r}, ${c})"
+                   oninput="onCellInput(event, '${tag}', ${r}, ${c})"
+                   class="matrix-input w-8 h-7 text-[11px] text-center font-mono font-bold rounded border border-slate-200 focus:outline-none focus:ring-2 focus:ring-${colorClass}-500 ${isReadonly ? 'bg-slate-900 text-white shadow-inner cursor-default' : (colorClass === 'rose' ? 'bg-rose-50/60 text-rose-900' : (colorClass === 'emerald' ? 'bg-emerald-50/60 text-emerald-900' : 'bg-sky-50/60 text-sky-900'))} transition-all">
+          `;
+        }
+        html += `</div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function onCellFocus(r, c) {
+      selectedPixel = { r, c };
+      updateSelectedPixelInspector();
+      highlightSelectedCell();
+    }
+
+    function onCellInput(event, tag, r, c) {
+      let rawVal = event.target.value;
+      let val = parseInt(rawVal, 10);
+      if (isNaN(val)) val = 0;
+      val = Math.max(0, Math.min(255, val));
+      event.target.value = val;
+
+      if (tag === 'a-r') matrixA_R[r][c] = val;
+      if (tag === 'a-g') matrixA_G[r][c] = val;
+      if (tag === 'a-b') matrixA_B[r][c] = val;
+
+      recalculateMatrixY();
+
+      // Fast update DOM for result matrix Y
+      const cellY = document.getElementById(`cell-y-${r}-${c}`);
+      if (cellY) cellY.value = matrixY[r][c];
+
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+    }
+
+    function highlightSelectedCell() {
+      document.querySelectorAll('.matrix-input').forEach(el => el.classList.remove('ring-2', 'ring-indigo-600', 'scale-105'));
+      const { r, c } = selectedPixel;
+      const tags = ['a-r', 'a-g', 'a-b', 'y'];
+      tags.forEach(tag => {
+        const el = document.getElementById(`cell-${tag}-${r}-${c}`);
+        if (el) {
+          el.classList.add('ring-2', 'ring-indigo-600', 'scale-105');
+        }
+      });
+    }
+
+    function updateAllCanvases() {
+      renderColorCanvas('canvas-a', matrixA_R, matrixA_G, matrixA_B);
+      renderGrayscaleCanvas('canvas-y', matrixY);
+    }
+
+    function renderColorCanvas(canvasId, matR, matG, matB) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      const width = canvas.width;
+      const height = canvas.height;
+      const cellW = width / 5;
+      const cellH = height / 5;
+
+      ctx.clearRect(0, 0, width, height);
+
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const red = matR[r][c] || 0;
+          const green = matG[r][c] || 0;
+          const blue = matB[r][c] || 0;
+
+          ctx.fillStyle = `rgb(${red}, ${green}, ${blue})`;
+          ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+
+          // Grid lines
+          ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+        }
+      }
+    }
+
+    function renderGrayscaleCanvas(canvasId, matY) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      const width = canvas.width;
+      const height = canvas.height;
+      const cellW = width / 5;
+      const cellH = height / 5;
+
+      ctx.clearRect(0, 0, width, height);
+
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const gray = matY[r][c] || 0;
+
+          ctx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
+          ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+
+          // Grid lines
+          ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+        }
+      }
+    }
+
+    function updateSelectedPixelInspector() {
+      const { r, c } = selectedPixel;
+
+      const aR = matrixA_R[r][c] || 0;
+      const aG = matrixA_G[r][c] || 0;
+      const aB = matrixA_B[r][c] || 0;
+      const yVal = matrixY[r][c] || 0;
+
+      // Update Left Sidebar Preview
+      document.getElementById('selected-pixel-coords').innerText = `(${r + 1}, ${c + 1})`;
+      document.getElementById('preview-pixel-a').style.backgroundColor = `rgb(${aR}, ${aG}, ${aB})`;
+      document.getElementById('preview-pixel-y').style.backgroundColor = `rgb(${yVal}, ${yVal}, ${yVal})`;
+      document.getElementById('text-pixel-a').innerText = `(${aR}, ${aG}, ${aB})`;
+      document.getElementById('text-pixel-y').innerText = `${yVal}`;
+
+      // Update Right Inspector Formula
+      const coordBadge = document.getElementById('selected-coord-text');
+      coordBadge.innerHTML = `좌표 $(i=${r + 1}, j=${c + 1})$`;
+
+      const formulaBox = document.getElementById('pixel-math-formula');
+      
+      const termR = (weightR * aR).toFixed(1);
+      const termG = (weightG * aG).toFixed(1);
+      const termB = (weightB * aB).toFixed(1);
+
+      formulaBox.innerHTML = `$$Y_{${r+1},${c+1}} = \\begin{bmatrix} ${weightR.toFixed(3)} & ${weightG.toFixed(3)} & ${weightB.toFixed(3)} \\end{bmatrix} \\begin{bmatrix} ${aR} \\\\ ${aG} \\\\ ${aB} \\end{bmatrix} = ${termR} + ${termG} + ${termB} = \\mathbf{${yVal}}$$`;
+
+      if (window.renderMathInElement) {
+        renderMathInElement(coordBadge, { delimiters: [{left: '$', right: '$', display: false}] });
+        renderMathInElement(formulaBox, { delimiters: [{left: '$$', right: '$$', display: true}] });
+      }
+    }
+
+    function loadPreset(type) {
+      const preset = getPresetData(type);
+      matrixA_R = preset.R;
+      matrixA_G = preset.G;
+      matrixA_B = preset.B;
+
+      recalculateMatrixY();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      showToast('새로운 이미지 프리셋을 불러왔습니다.');
+    }
+
+    function resetAll() {
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          matrixA_R[r][c] = 0;
+          matrixA_G[r][c] = 0;
+          matrixA_B[r][c] = 0;
+        }
+      }
+      applyWeightPreset('average');
+      showToast('모든 행렬 데이터가 0으로 초기화되었습니다.');
+    }
+
+    function switchChannelView(view) {
+      const blockR = document.getElementById('block-channel-r');
+      const blockG = document.getElementById('block-channel-g');
+      const blockB = document.getElementById('block-channel-b');
+      const blockY = document.getElementById('block-channel-y');
+
+      document.querySelectorAll('.ch-tab-btn').forEach(btn => {
+        btn.classList.remove('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+        btn.classList.add('text-slate-600');
+      });
+
+      if (view === 'all') {
+        blockR.classList.remove('hidden');
+        blockG.classList.remove('hidden');
+        blockB.classList.remove('hidden');
+        blockY.classList.remove('hidden');
+        document.getElementById('tab-btn-all').classList.add('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+      } else if (view === 'r') {
+        blockR.classList.remove('hidden');
+        blockG.classList.add('hidden');
+        blockB.classList.add('hidden');
+        blockY.classList.add('hidden');
+        document.getElementById('tab-btn-r').classList.add('bg-white', 'shadow', 'text-rose-600', 'font-semibold');
+      } else if (view === 'g') {
+        blockR.classList.add('hidden');
+        blockG.classList.remove('hidden');
+        blockB.classList.add('hidden');
+        blockY.classList.add('hidden');
+        document.getElementById('tab-btn-g').classList.add('bg-white', 'shadow', 'text-emerald-600', 'font-semibold');
+      } else if (view === 'b') {
+        blockR.classList.add('hidden');
+        blockG.classList.add('hidden');
+        blockB.classList.remove('hidden');
+        blockY.classList.add('hidden');
+        document.getElementById('tab-btn-b').classList.add('bg-white', 'shadow', 'text-sky-600', 'font-semibold');
+      } else if (view === 'y') {
+        blockR.classList.add('hidden');
+        blockG.classList.add('hidden');
+        blockB.classList.add('hidden');
+        blockY.classList.remove('hidden');
+        document.getElementById('tab-btn-y').classList.add('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+      }
+    }
+
+    function exportAllMatricesCSV() {
+      let csv = `=== Matrix A (Original RGB Tensor 5x5x3) ===\n`;
+      csv += `[Red Channel A_R (weight w_R = ${weightR.toFixed(3)})]\n` + matrixA_R.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Green Channel A_G (weight w_G = ${weightG.toFixed(3)})]\n` + matrixA_G.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Blue Channel A_B (weight w_B = ${weightB.toFixed(3)})]\n` + matrixA_B.map(row => row.join(',')).join('\n') + `\n\n`;
+
+      csv += `=== Matrix Y (Result Grayscale Matrix 5x5) ===\n`;
+      csv += `[Grayscale Y = round(w_R*A_R + w_G*A_G + w_B*A_B)]\n` + matrixY.map(row => row.join(',')).join('\n') + `\n`;
+
+      const tempTextArea = document.createElement('textarea');
+      tempTextArea.value = csv;
+      document.body.appendChild(tempTextArea);
+      tempTextArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempTextArea);
+
+      showToast('📋 전체 RGB 행렬 및 흑백($Y$) CSV 데이터가 복사되었습니다.');
+    }
+
+    function showToast(msg, icon = '✨') {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-icon').innerText = icon;
+      document.getElementById('toast-message').innerText = msg;
+      
+      toast.classList.remove('opacity-0', 'translate-y-[-100px]');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'translate-y-[-100px]');
+      }, 2400);
+    }
+  </script>
+</body>
+</html>

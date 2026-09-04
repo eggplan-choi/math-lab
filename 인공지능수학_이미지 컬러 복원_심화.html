@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>선형변환의 역 관점에서 본 이미지 복원</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- KaTeX CSS & JS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+  
+  <!-- Three.js & OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .katex-display { margin: 0.6em 0 !important; }
+    .focus-btn { transition: all 0.2s ease-in-out; }
+    .focus-btn.active { transform: scale(1.05); }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+            선형변환의 역 관점에서 본 이미지 복원
+          </h1>
+          <p class="text-[11px] text-slate-400">인공지능 수학 인터랙티브 시각화</p>
+        </div>
+      </div>
+      <div class="hidden md:flex items-center space-x-2 bg-slate-950/60 p-1.5 rounded-xl border border-slate-800" id="step-chips"></div>
+    </div>
+  </header>
+
+  <div class="md:hidden bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center justify-between">
+    <span class="text-xs font-medium text-slate-300" id="mobile-step-title">스텝 1 / 6</span>
+    <div class="flex space-x-1" id="mobile-step-dots"></div>
+  </div>
+
+  <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+    
+    <section class="lg:col-span-7 bg-slate-900/90 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col">
+      <div class="px-4 py-3 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-300">3D RGB 색상 공간 사상 시뮬레이터</span>
+        </div>
+        <div class="flex items-center space-x-2 text-xs">
+          <button id="btn-toggle-spin" class="px-2.5 py-1 rounded-lg bg-indigo-600/30 text-indigo-300 hover:bg-slate-700 hover:text-slate-300 transition flex items-center space-x-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            <span id="spin-text">회전 ON</span>
+          </button>
+          <button id="btn-reset-cam" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition">시점 초기화</button>
+        </div>
+      </div>
+
+      <div class="relative w-full h-[380px] sm:h-[460px] bg-slate-950 flex items-center justify-center">
+        <canvas id="three-canvas" class="w-full h-full block cursor-grab active:cursor-grabbing"></canvas>
+        
+        <div class="absolute top-3 left-3 bg-slate-900/80 backdrop-blur px-3 py-2 rounded-xl border border-slate-800 text-[11px] space-y-1 pointer-events-none shadow-lg">
+          <div class="flex items-center space-x-2"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span><span class="text-slate-300 font-mono">X축 : Red (0~255)</span></div>
+          <div class="flex items-center space-x-2"><span class="w-2.5 h-2.5 rounded-full bg-green-500"></span><span class="text-slate-300 font-mono">Y축 : Green (0~255)</span></div>
+          <div class="flex items-center space-x-2"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span><span class="text-slate-300 font-mono">Z축 : Blue (0~255)</span></div>
+        </div>
+
+        <div id="canvas-status-badge" class="absolute bottom-3 right-3 bg-slate-900/90 backdrop-blur px-3 py-1.5 rounded-lg border border-slate-700/80 text-xs font-mono text-indigo-300 shadow">
+          상태 : 단일 색상 벡터 관찰 중
+        </div>
+      </div>
+
+      <div class="p-3.5 bg-slate-950/80 border-t border-slate-800 flex flex-col gap-3">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs font-mono">
+          <div class="flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+            <span class="text-slate-300 font-semibold" id="inspector-name">선택된 점: 🍎 사과 (210, 45, 45)</span>
+          </div>
+          <div class="text-indigo-300 font-semibold" id="inspector-calc">
+            $0.299(210) + 0.587(45) + 0.114(45) \approx 95$
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-2.5 items-center justify-between">
+          <div class="flex items-center space-x-2 text-xs">
+            <span class="px-2.5 py-1 rounded-md bg-indigo-950/80 border border-indigo-800/60 text-indigo-300 font-mono font-bold" id="fixed-brightness-label">
+              고정 밝기: $y_0 = 95$
+            </span>
+            <span class="text-slate-400 text-[11px] hidden sm:inline" id="fixed-brightness-sub">($A\mathbf{x} = 95$ 만족)</span>
+          </div>
+          <div class="flex items-center space-x-1.5" id="focus-btn-group">
+            <button id="btn-preset-apple" class="focus-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30 flex items-center space-x-1 ring-2 ring-red-400 active">
+              <span>🍎 사과</span>
+            </button>
+            <button id="btn-preset-leaf" class="focus-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30 flex items-center space-x-1">
+              <span>🍃 나뭇잎</span>
+            </button>
+            <button id="btn-preset-gray" class="focus-btn px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-500/20 text-slate-300 border border-slate-500/40 hover:bg-slate-500/30 flex items-center space-x-1" style="display: none;">
+              <span>⚪ 특수해 $\mathbf{x}_p$</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="lg:col-span-5 bg-slate-900/90 rounded-2xl border border-slate-800 p-5 sm:p-6 shadow-2xl flex flex-col justify-between min-h-[580px]">
+      <div id="narrative-container"></div>
+      <div class="pt-5 mt-5 border-t border-slate-800 flex items-center justify-between">
+        <button id="btn-prev" class="px-4 py-2.5 rounded-xl text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition flex items-center space-x-1.5 border border-slate-700">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+          <span>이전 단계</span>
+        </button>
+        <span id="step-number-text" class="text-xs font-mono font-bold tracking-wider text-indigo-400 bg-indigo-950/40 px-3 py-1 rounded-full border border-indigo-800/40">STEP 1 / 6</span>
+        <button id="btn-next" class="px-5 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition flex items-center space-x-1.5">
+          <span>다음 단계</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 text-center text-xs text-slate-400 border-t border-slate-900">
+    선형대수학과 딥러닝 최적화 | 연립방정식 $\to$ 랭크-영공간 정리 $\to$ 평행한 해평면 $\to$ 공간 문맥 사전확률
+  </footer>
+
+  <script>
+    // --- Step Data Definitions ---
+    const STEPS = [
+      {
+        id: 1,
+        title: "3차원 색상 공간과 벡터",
+        chip: "1. 색상 공간 ℝ³",
+        badge: "상태: 3차원 공간상의 RGB 색상 벡터 관찰",
+        html: `
+          <div class="space-y-4">
+            <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold">
+              <span>개념 도입</span><span>•</span><span>색상의 벡터화</span>
+            </div>
+            <h2 class="text-xl font-bold text-white tracking-tight">1. 컬러 이미지는 $\\mathbb{R}^3$ 공간의 점이다</h2>
+            <p class="text-slate-300 text-sm leading-relaxed">
+              디지털 화면의 픽셀은 빨강(Red), 초록(Green), 파랑(Blue)의 3가지 채널로 구성됩니다. 각 성분이 0부터 255의 세기를 가지므로, 하나의 픽셀은 $3$ 차원 유클리드 공간 $\\mathbb{R}^3$ 위의 하나의 열벡터 $\\mathbf{x}$ 로 표현됩니다.
+            </p>
+            <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 text-sm font-mono text-indigo-200">
+              $$\\mathbf{x} = \\begin{bmatrix} R \\\\ G \\\\ B \\end{bmatrix} \\in [0, 255]^3$$
+            </div>
+            <div class="p-3.5 rounded-xl bg-slate-800/60 border border-slate-700/60 text-xs text-slate-300">
+              <span class="font-semibold text-amber-300">💡 관찰 가이드:</span>
+              우측 하단의 포커스 버튼들을 눌러 3차원 공간상에 찍힌 🍎 사과와 🍃 나뭇잎의 위치를 확인하세요.
+            </div>
+          </div>
+        `
+      },
+      {
+        id: 2,
+        title: "정방향 선형사상",
+        chip: "2. 선형사상 (3→1)",
+        badge: "상태: 투영 행렬 A에 의한 1차원 밝기 축소 사상",
+        html: `
+          <div class="space-y-4">
+            <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+              <span>수학적 모델</span><span>•</span><span>차원 축소 사상</span>
+            </div>
+            <h2 class="text-xl font-bold text-white tracking-tight">2. 흑백 변환은 $1 \\times 3$ 선형변환이다</h2>
+            <p class="text-slate-300 text-sm leading-relaxed">
+              컬러 이미지를 흑백으로 바꿀 때, 인간 눈의 민감도를 반영한 가중합 선형사상 $T: \\mathbb{R}^3 \\to \\mathbb{R}^1$ 을 적용합니다.
+            </p>
+            <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 text-sm font-mono text-emerald-200">
+              $$y_0 = A\\mathbf{x} = \\begin{bmatrix} 0.299 & 0.587 & 0.114 \\end{bmatrix} \\begin{bmatrix} R \\\\ G \\\\ B \\end{bmatrix}$$
+            </div>
+            <p class="text-slate-300 text-sm leading-relaxed">
+              계수행렬 $A$ 의 크기는 $1 \\times 3$ 입니다. 3차원의 풍부한 색상 정보가 오직 1차원의 스칼라 밝기값 $y_0 = 95$ 로 압축됩니다.
+            </p>
+          </div>
+        `
+      },
+      {
+        id: 3,
+        title: "정보의 손실과 특수해",
+        chip: "3. 특수해 수렴",
+        badge: "상태: 고유한 색상들이 회색 특수해로 붕괴(수렴)하는 과정",
+        html: `
+          <div class="space-y-4">
+            <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold">
+              <span>특수해</span><span>•</span><span>정보의 손실</span>
+            </div>
+            <h2 class="text-xl font-bold text-white tracking-tight">3. 모든 색상은 흑백(특수해)으로 수렴한다</h2>
+            <p class="text-slate-300 text-sm leading-relaxed">
+              사과와 나뭇잎은 모두 밝기 $95$ 로 변환됩니다. 3차원 공간 대각선 상의 회색 점을 이 방정식의 <strong>특수해 $\\mathbf{x}_p$</strong>라고 부릅니다.
+            </p>
+            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-sm font-mono text-amber-200">
+              $$A\\mathbf{x}_p = 95 \\quad (\\mathbf{x}_p = [95, 95, 95]^T)$$
+            </div>
+            <p class="text-slate-300 text-sm leading-relaxed">
+              좌측 뷰어의 애니메이션을 관찰해 보세요. 컬러 이미지가 흑백으로 덮일 때, 사과와 나뭇잎의 고유한 색상 정보는 상실되고 모두 동일한 회색 점(특수해)으로 투영되어 수렴하게 됩니다.
+            </p>
+          </div>
+        `
+      },
+      {
+        id: 4,
+        title: "사라진 정보의 방: 영공간",
+        chip: "4. 영공간의 의미",
+        badge: "상태: 원점의 2차원 영공간 평면 추가 (수렴 경로와 평행)",
+        html: `
+          <div class="space-y-4">
+            <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold">
+              <span>차원 정리</span><span>•</span><span>영공간 (Null Space)</span>
+            </div>
+            <h2 class="text-xl font-bold text-white tracking-tight">4. 사라진 색상 정보는 어디로 갔을까?</h2>
+            <p class="text-slate-300 text-sm leading-relaxed">
+              애니메이션에서 사과와 나뭇잎이 회색으로 수렴하며 <strong>이동하는 경로(차이 벡터)</strong>에 주목하세요. 이 경로들은 정확히 <strong>원점을 지나는 붉은색 2차원 평면</strong>과 완벽하게 평행합니다.
+            </p>
+            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-sm font-mono text-rose-200">
+              $$A\\mathbf{x}_h = \\mathbf{n} \\cdot \\mathbf{x}_h = 0$$
+            </div>
+            <p class="text-slate-300 text-sm leading-relaxed">
+              이 붉은색 평면이 바로 $A\\mathbf{x} = 0$ 을 만족하는 <strong>영공간 $\\operatorname{Null}(A)$</strong>입니다. 영공간은 흑백 변환에서 '무시되고 버려진 색상 차이 벡터들의 모음'을 기하학적으로 보여줍니다.
+            </p>
+          </div>
+        `
+      },
+      {
+        id: 5,
+        title: "평행한 해평면 (일반해)",
+        chip: "5. 아핀 평행이동",
+        badge: "상태: 원점의 영공간(적색)과 평행이동한 해평면(보라색)",
+        html: `
+          <div class="space-y-4">
+            <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold">
+              <span>기하학적 해석</span><span>•</span><span>평행성</span>
+            </div>
+            <h2 class="text-xl font-bold text-white tracking-tight">5. 일반해: $\\mathbf{x} = \\mathbf{x}_p + \\mathbf{x}_h$</h2>
+            <p class="text-slate-300 text-sm leading-relaxed">
+              연립방정식의 일반해는 특수해와 영공간의 합입니다. 이는 원점의 붉은색 영공간을 <strong>특수해(회색 점) 위치로 평행이동</strong>시킨 보라색 해평면과 같습니다.
+            </p>
+            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-sm font-mono text-indigo-200">
+              $$\\operatorname{Null}(A) \\;\\parallel\\; \\{\\mathbf{x} \\mid A\\mathbf{x} = 95\\}$$
+            </div>
+            <p class="text-slate-300 text-sm leading-relaxed">
+              애니메이션이 멈추고 원래 자리로 돌아온 사과와 나뭇잎을 보세요. 이들 모두 밝기가 $y_0 = 95$ 로 동일하므로, 완벽하게 이 보라색 평면 위에 위치하고 있습니다.
+            </p>
+          </div>
+        `
+      },
+      {
+        id: 6,
+        title: "인공지능 최적해 수렴",
+        chip: "6. 공간 문맥 최적화",
+        badge: "상태: 공간 문맥(CNN)을 통한 2차원 평면 내 최적해 수렴",
+        html: `
+          <div class="space-y-4">
+            <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-xs font-semibold">
+              <span>역문제 해결</span><span>•</span><span>제약 조건 추가</span>
+            </div>
+            <h2 class="text-xl font-bold text-white tracking-tight">6. AI는 어떻게 하나의 색을 특정할까?</h2>
+            <p class="text-slate-300 text-sm leading-relaxed">
+              방정식 $A\\mathbf{x} = 95$ 만으로는 2차원 평면 위의 수많은 색 중 정답을 고를 수 없습니다. AI는 <strong>주변 픽셀들의 공간적 문맥(외곽선, 질감)</strong>을 통해 잃어버린 조건을 채웁니다.
+            </p>
+            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-sm font-mono text-purple-200">
+              $$\\hat{\\mathbf{x}} = \\arg\\max_{\\mathbf{x} \\in \\text{Plane}} P(\\mathbf{x} \\mid \\text{Context})$$
+            </div>
+            <p class="text-slate-300 text-sm leading-relaxed">
+              "사과 형태의 질감"이라는 문맥 정보가 더해지면, 모델은 보라색 해평면 위에서 빨간색일 조건부 확률을 극대화하여 자유도를 0으로 축소하고 정답을 복원해냅니다.
+            </p>
+          </div>
+        `
+      }
+    ];
+
+    // --- Global Variables & Element Bindings ---
+    let scene, camera, renderer, controls;
+    let solutionPlaneMesh, nullPlaneMesh, normalArrow;
+    let pointApple, pointLeaf, pointGray, animatedTargetPoint, aiCloudMesh, dropLinesGroup;
+    let targetPointPosition = new THREE.Vector3();
+    let currentStep = 1;
+    let autoRotate = true;
+    let activeTarget = 'apple';
+    let animationClock;
+
+    const SCALE = 10 / 255;
+    const P = {
+      apple: new THREE.Vector3(210 * SCALE, 45 * SCALE, 45 * SCALE),
+      leaf: new THREE.Vector3(50 * SCALE, 130 * SCALE, 40 * SCALE),
+      gray: new THREE.Vector3(95 * SCALE, 95 * SCALE, 95 * SCALE)
+    };
+    const NORMAL = new THREE.Vector3(0.299, 0.587, 0.114).normalize();
+
+    let elNarrative, elStepNum, elMobileTitle, elChips, elMobileDots;
+    let btnPrev, btnNext, btnToggleSpin, btnResetCam;
+    let inspName, inspCalc;
+    let btnApple, btnLeaf, btnGray;
+    let focusBtns = [];
+
+    // Helper to safely render KaTeX
+    function safeRenderMath(element) {
+      if (!element) return;
+      try {
+        renderMathInElement(element, { 
+          delimiters: [
+            { left: "$$", right: "$$", display: true },
+            { left: "$", right: "$", display: false }
+          ], 
+          throwOnError: false 
+        });
+      } catch (e) { console.error("KaTeX render error:", e); }
+    }
+
+    // --- Three.js Initialization ---
+    function initThree() {
+      const canvas = document.getElementById("three-canvas");
+      const parent = canvas.parentElement;
+
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(45, parent.clientWidth / parent.clientHeight, 0.1, 100);
+      camera.position.set(16, 12, 18);
+
+      renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+      renderer.setSize(parent.clientWidth, parent.clientHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.target.set(5, 4, 5);
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+      dirLight.position.set(20, 30, 20);
+      scene.add(dirLight);
+
+      createAxes();
+      createPlanes();
+      createPoints();
+      createAnnotations();
+
+      window.addEventListener("resize", () => {
+        camera.aspect = parent.clientWidth / parent.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(parent.clientWidth, parent.clientHeight);
+      });
+      
+      targetPointPosition.copy(P.apple);
+      animationClock = new THREE.Clock();
+    }
+
+    function createAxes() {
+      const boxGeo = new THREE.BoxGeometry(10, 10, 10);
+      const edges = new THREE.EdgesGeometry(boxGeo);
+      const cubeBox = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x334155, linewidth: 1 }));
+      cubeBox.position.set(5, 5, 5);
+      scene.add(cubeBox);
+
+      const grid = new THREE.GridHelper(10, 10, 0x1e293b, 0x0f172a);
+      grid.position.set(5, 0, 5);
+      scene.add(grid);
+
+      const axesGroup = new THREE.Group();
+      axesGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(11,0,0)]), new THREE.LineBasicMaterial({ color: 0xef4444, linewidth: 2 })));
+      axesGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,11,0)]), new THREE.LineBasicMaterial({ color: 0x22c55e, linewidth: 2 })));
+      axesGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,11)]), new THREE.LineBasicMaterial({ color: 0x3b82f6, linewidth: 2 })));
+      
+      const matGrayLine = new THREE.LineDashedMaterial({ color: 0x94a3b8, dashSize: 0.3, gapSize: 0.15 });
+      const grayLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(10,10,10)]), matGrayLine);
+      grayLine.computeLineDistances();
+      axesGroup.add(grayLine);
+      scene.add(axesGroup);
+    }
+
+    function createPlanes() {
+      const planeGeo = new THREE.PlaneGeometry(16, 16);
+      
+      // Solution Plane (Purple)
+      solutionPlaneMesh = new THREE.Mesh(planeGeo, new THREE.MeshStandardMaterial({ color: 0x6366f1, transparent: true, opacity: 0.35, side: THREE.DoubleSide, roughness: 0.4 }));
+      solutionPlaneMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), NORMAL);
+      solutionPlaneMesh.position.copy(P.gray); 
+      scene.add(solutionPlaneMesh);
+
+      // Null Space Plane (Red)
+      nullPlaneMesh = new THREE.Mesh(planeGeo, new THREE.MeshStandardMaterial({ color: 0xf43f5e, transparent: true, opacity: 0.25, side: THREE.DoubleSide, roughness: 0.6 }));
+      nullPlaneMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), NORMAL);
+      nullPlaneMesh.position.set(0,0,0);
+      scene.add(nullPlaneMesh);
+
+      // Normal Vector Arrow (Golden)
+      normalArrow = new THREE.ArrowHelper(NORMAL, new THREE.Vector3(0,0,0), 7, 0xfacc15, 1.0, 0.4);
+      scene.add(normalArrow);
+    }
+
+    function createPoints() {
+      const createSphere = (color, pos) => {
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 24), new THREE.MeshStandardMaterial({ color: color, roughness: 0.3 }));
+        mesh.position.copy(pos);
+        scene.add(mesh);
+        return mesh;
+      };
+      
+      pointApple = createSphere(0xef4444, P.apple);
+      pointLeaf = createSphere(0x10b981, P.leaf);
+      pointGray = createSphere(0x94a3b8, P.gray);
+
+      // Target Ring
+      animatedTargetPoint = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.05, 16, 32), new THREE.MeshBasicMaterial({ color: 0xfacc15, wireframe: true }));
+      animatedTargetPoint.position.copy(P.apple);
+      scene.add(animatedTargetPoint);
+
+      // AI Cloud
+      aiCloudMesh = new THREE.Mesh(
+        new THREE.RingGeometry(0.2, 2.2, 32), 
+        new THREE.MeshBasicMaterial({ 
+          color: 0x00ffff,
+          transparent: true, 
+          opacity: 0.6, 
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      );
+      aiCloudMesh.quaternion.copy(solutionPlaneMesh.quaternion);
+      aiCloudMesh.position.copy(P.apple).add(NORMAL.clone().multiplyScalar(0.08));
+      scene.add(aiCloudMesh);
+    }
+
+    function createAnnotations() {
+      dropLinesGroup = new THREE.Group();
+      const mat = new THREE.LineDashedMaterial({ color: 0x10b981, dashSize: 0.2, gapSize: 0.2, transparent: true, opacity: 0.6 });
+      
+      // Leaf drop lines
+      const lineToFloor = new THREE.Line(new THREE.BufferGeometry().setFromPoints([P.leaf, new THREE.Vector3(P.leaf.x, 0, P.leaf.z)]), mat);
+      lineToFloor.computeLineDistances();
+      const lineToOrigin = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(P.leaf.x, 0, P.leaf.z), new THREE.Vector3(0, 0, 0)]), mat);
+      lineToOrigin.computeLineDistances();
+      dropLinesGroup.add(lineToFloor, lineToOrigin);
+
+      // Apple drop lines
+      const matApp = new THREE.LineDashedMaterial({ color: 0xef4444, dashSize: 0.2, gapSize: 0.2, transparent: true, opacity: 0.6 });
+      const lineAppToFloor = new THREE.Line(new THREE.BufferGeometry().setFromPoints([P.apple, new THREE.Vector3(P.apple.x, 0, P.apple.z)]), matApp);
+      lineAppToFloor.computeLineDistances();
+      dropLinesGroup.add(lineAppToFloor);
+      
+      scene.add(dropLinesGroup);
+    }
+
+    // --- Interaction & Rendering Logic ---
+    function selectPointFocus(type) {
+      activeTarget = type;
+      focusBtns.forEach(btn => btn.classList.remove("ring-2", "ring-red-400", "ring-emerald-400", "ring-slate-300", "active"));
+
+      if (type === 'apple') {
+        btnApple.classList.add("ring-2", "ring-red-400", "active");
+        targetPointPosition.copy(P.apple);
+        inspName.innerHTML = "선택된 점: 🍎 사과 (210, 45, 45)";
+        inspCalc.innerHTML = "$0.299(210) + 0.587(45) + 0.114(45) \\approx 95$";
+      } else if (type === 'leaf') {
+        btnLeaf.classList.add("ring-2", "ring-emerald-400", "active");
+        targetPointPosition.copy(P.leaf);
+        inspName.innerHTML = "선택된 점: 🍃 나뭇잎 (50, 130, 40)";
+        inspCalc.innerHTML = "$0.299(50) + 0.587(130) + 0.114(40) \\approx 95$";
+      } else if (type === 'gray') {
+        btnGray.classList.add("ring-2", "ring-slate-300", "active");
+        targetPointPosition.copy(P.gray);
+        inspName.innerHTML = "선택된 점: ⚪ 특수해 $\\mathbf{x}_p$ (95, 95, 95)";
+        inspCalc.innerHTML = "$0.299(95) + 0.587(95) + 0.114(95) = 95$";
+      }
+      safeRenderMath(inspName);
+      safeRenderMath(inspCalc);
+    }
+
+    function updateStepVisuals(step) {
+      document.getElementById("canvas-status-badge").textContent = STEPS[step - 1].badge;
+      
+      nullPlaneMesh.visible = false;
+      solutionPlaneMesh.visible = false;
+      normalArrow.visible = false;
+      aiCloudMesh.visible = false;
+      dropLinesGroup.visible = false;
+      
+      pointApple.visible = true; 
+      pointLeaf.visible = true;
+      pointGray.visible = (step >= 3); 
+      
+      btnGray.style.display = (step >= 3) ? "flex" : "none";
+
+      switch(step) {
+        case 1:
+        case 2:
+          dropLinesGroup.visible = true;
+          if (step === 2 && !btnApple.classList.contains("active")) selectPointFocus('apple');
+          break;
+        case 3:
+          if (!btnGray.classList.contains("active")) selectPointFocus('gray');
+          break;
+        case 4:
+          nullPlaneMesh.visible = true;
+          normalArrow.visible = true;
+          if (!btnGray.classList.contains("active")) selectPointFocus('gray');
+          break;
+        case 5:
+          nullPlaneMesh.visible = true;
+          solutionPlaneMesh.visible = true;
+          normalArrow.visible = true;
+          if (!btnApple.classList.contains("active")) selectPointFocus('apple');
+          break;
+        case 6:
+          solutionPlaneMesh.visible = true;
+          aiCloudMesh.visible = true;
+          if (!btnApple.classList.contains("active")) selectPointFocus('apple');
+          break;
+      }
+    }
+
+    function renderStep() {
+      const step = STEPS[currentStep - 1];
+      elNarrative.innerHTML = step.html;
+      elStepNum.textContent = `STEP ${currentStep} / ${STEPS.length}`;
+      elMobileTitle.textContent = `스텝 ${currentStep} / ${STEPS.length}: ${step.title}`;
+      
+      btnPrev.disabled = currentStep === 1;
+      btnNext.innerHTML = currentStep === STEPS.length 
+        ? `<span>처음으로</span><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>`
+        : `<span>다음 단계</span><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>`;
+
+      elChips.innerHTML = "";
+      elMobileDots.innerHTML = "";
+      STEPS.forEach((s, i) => {
+        const isActive = (i + 1) === currentStep;
+        
+        const btn = document.createElement("button");
+        btn.className = `px-3 py-1 text-xs font-semibold rounded-lg transition ${isActive ? "bg-indigo-600 text-white shadow-md" : "text-slate-400 hover:text-slate-200"}`;
+        btn.textContent = s.chip;
+        btn.onclick = () => { currentStep = i + 1; renderStep(); };
+        elChips.appendChild(btn);
+
+        const dot = document.createElement("div");
+        dot.className = `w-2 h-2 rounded-full transition-all ${isActive ? "bg-indigo-500 w-4" : "bg-slate-750"}`;
+        elMobileDots.appendChild(dot);
+      });
+
+      safeRenderMath(elNarrative);
+      updateStepVisuals(currentStep);
+    }
+
+    // --- DOM Bindings and Event Listeners ---
+    function bindDOM() {
+      elNarrative = document.getElementById("narrative-container");
+      elStepNum = document.getElementById("step-number-text");
+      elMobileTitle = document.getElementById("mobile-step-title");
+      elChips = document.getElementById("step-chips");
+      elMobileDots = document.getElementById("mobile-step-dots");
+      
+      btnPrev = document.getElementById("btn-prev");
+      btnNext = document.getElementById("btn-next");
+      btnToggleSpin = document.getElementById("btn-toggle-spin");
+      btnResetCam = document.getElementById("btn-reset-cam");
+      
+      inspName = document.getElementById("inspector-name");
+      inspCalc = document.getElementById("inspector-calc");
+      
+      btnApple = document.getElementById("btn-preset-apple");
+      btnLeaf = document.getElementById("btn-preset-leaf");
+      btnGray = document.getElementById("btn-preset-gray");
+      focusBtns = [btnApple, btnLeaf, btnGray];
+
+      btnNext.addEventListener("click", () => { currentStep = currentStep < STEPS.length ? currentStep + 1 : 1; renderStep(); });
+      btnPrev.addEventListener("click", () => { if(currentStep > 1) { currentStep--; renderStep(); } });
+      
+      btnToggleSpin.addEventListener("click", () => {
+        autoRotate = !autoRotate;
+        document.getElementById("spin-text").textContent = autoRotate ? "회전 ON" : "회전 OFF";
+        btnToggleSpin.classList.toggle("bg-indigo-600/30", autoRotate);
+        btnToggleSpin.classList.toggle("text-indigo-300", autoRotate);
+        btnToggleSpin.classList.toggle("bg-slate-800", !autoRotate);
+        btnToggleSpin.classList.toggle("text-slate-300", !autoRotate);
+      });
+
+      btnResetCam.addEventListener("click", () => {
+        camera.position.set(16, 12, 18);
+        controls.target.set(5, 4, 5);
+      });
+
+      btnApple.addEventListener("click", () => selectPointFocus('apple'));
+      btnLeaf.addEventListener("click", () => selectPointFocus('leaf'));
+      btnGray.addEventListener("click", () => selectPointFocus('gray'));
+
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowRight") btnNext.click();
+        if (e.key === "ArrowLeft") btnPrev.click();
+      });
+    }
+
+    // --- Animation Loop ---
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = animationClock.getElapsedTime();
+
+      controls.update();
+      if (autoRotate) scene.rotation.y = Math.sin(t * 0.15) * 0.25;
+
+      let collapseProgress = 0;
+      if (currentStep === 3 || currentStep === 4) {
+        const phase = (t * 0.8) % 2; 
+        if (phase < 1) {
+          collapseProgress = 1 - Math.pow(1 - phase, 3); 
+        } else if (phase < 1.8) {
+          collapseProgress = 1; 
+        } else {
+          collapseProgress = 0; 
+        }
+      }
+      
+      pointApple.position.lerpVectors(P.apple, P.gray, collapseProgress);
+      pointLeaf.position.lerpVectors(P.leaf, P.gray, collapseProgress);
+
+      if (activeTarget === 'apple') targetPointPosition.copy(pointApple.position);
+      else if (activeTarget === 'leaf') targetPointPosition.copy(pointLeaf.position);
+      else if (activeTarget === 'gray') targetPointPosition.copy(pointGray.position);
+
+      animatedTargetPoint.position.lerp(targetPointPosition, 0.12);
+      if (aiCloudMesh && aiCloudMesh.visible) {
+        const offsetPosition = targetPointPosition.clone().add(NORMAL.clone().multiplyScalar(0.08));
+        aiCloudMesh.position.lerp(offsetPosition, 0.12);
+        aiCloudMesh.material.opacity = 0.5 + Math.sin(t * 4) * 0.3;
+      }
+
+      animatedTargetPoint.rotation.z += 0.02;
+      animatedTargetPoint.rotation.x += 0.01;
+
+      renderer.render(scene, camera);
+    }
+
+    // --- Onload Initialization ---
+    window.onload = () => {
+      bindDOM();
+      
+      safeRenderMath(document.getElementById("btn-preset-gray"));
+      safeRenderMath(document.getElementById("fixed-brightness-label"));
+      safeRenderMath(document.getElementById("fixed-brightness-sub"));
+      
+      initThree();
+      renderStep();
+      selectPointFocus('apple');
+      animate();
+    };
+  </script>
+</body>
+</html>
