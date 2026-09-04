@@ -14,4 +14,4 @@
 5. 이미지 컬러 복원(심화 과제)
   https://eggplan-choi.github.io/math-lab/image-colorization.html
 6. 이미지 전환
-  https://eggplan-choi.github.io/math-lab/imgae_fade.html
+  https://eggplan-choi.github.io/math-lab/image_fade.html
