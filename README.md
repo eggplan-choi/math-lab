@@ -2,7 +2,7 @@
 2026학년도 2학기 인공지능수학 관련 페이지
 
 1. 이미지 데이터의 RGB 방식 익히기
-  https://eggplan-choi.github.io/math-lab/
+  https://eggplan-choi.github.io/math-lab/rgb.html
 2. 이미지 밝기 변환(행렬의 덧셈)
 
 3. 이미지 밝기 변환(아다마르 곱)
