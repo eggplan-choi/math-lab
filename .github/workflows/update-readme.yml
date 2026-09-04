@@ -1,0 +1,1 @@
+echo "- <a href=\"https://eggplan-choi.github.io/math-lab/${filename}\" target=\"_blank\">${title}</a>" >> README.md
