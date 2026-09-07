@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>인공지능 수학 - 이미지 대칭 변환과 전치행렬 (A^T)</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f8fafc',
+              100: '#f1f5f9',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- KaTeX for Mathematical Formulas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    
+    .matrix-input::-webkit-outer-spin-button,
+    .matrix-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .matrix-input {
+      -moz-appearance: textfield;
+    }
+    
+    .pixel-canvas {
+      image-rendering: pixelated;
+    }
+
+    /* Highlight for main diagonal elements a_ii */
+    .diagonal-cell {
+      position: relative;
+    }
+    .diagonal-cell::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      width: 6px;
+      height: 6px;
+      background-color: #f59e0b;
+      border-radius: 9999px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-[1700px] mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-indigo-600 to-sky-500 flex items-center justify-center text-white font-bold shadow-sm text-sm">
+          $\mathbf{A}^T$
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold text-slate-900 leading-tight">인공지능 수학 : 이미지의 대칭 변환과 전치행렬($\mathbf{A}^T$)</h1>
+          <p class="text-xs text-slate-500">주대각선 대칭 $(\mathbf{A}^T)_{i,j} = A_{j,i}$ 및 축 대칭 변환을 통한 3차원 RGB 텐서 기하학적 처리 탐구</p>
+        </div>
+      </div>
+
+      <!-- Grid Size & Preset Controls -->
+      <div class="flex items-center space-x-2 flex-wrap gap-y-1.5">
+        <!-- Grid Size Switcher -->
+        <div class="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <span class="text-[11px] font-bold text-slate-500 px-1.5">크기:</span>
+          <button onclick="changeGridSize(3)" id="size-btn-3" class="px-2.5 py-1 text-xs font-bold bg-white text-indigo-700 rounded-lg shadow-sm border border-slate-200">3 × 3 (교과서)</button>
+          <button onclick="changeGridSize(5)" id="size-btn-5" class="px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-lg transition">5 × 5</button>
+        </div>
+
+        <!-- Presets -->
+        <div class="flex items-center space-x-1">
+          <button onclick="loadScenarioPreset('asym-multi')" class="px-2.5 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 shadow-sm transition">🎨 비대칭 컬러 (기본)</button>
+          <button onclick="loadScenarioPreset('textbook-stripe')" class="px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-sm transition">📘 교과서 줄무늬</button>
+          <button onclick="loadScenarioPreset('asym-f')" class="px-2.5 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 shadow-sm transition">📐 'F'자 패턴</button>
+          <button onclick="loadScenarioPreset('corner-gradient')" class="px-2.5 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 shadow-sm transition">🌈 대각선 그라데이션</button>
+          <button onclick="resetAll()" class="px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-rose-50 hover:text-rose-600 shadow-sm transition">🔄 초기화</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main 3-Column Layout -->
+  <main class="max-w-[1700px] mx-auto px-4 sm:px-6 py-4 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+    <!-- [COLUMN 1: Left] Symmetry Mode Selector & Diagonal Invariant Inspector (3 Cols) -->
+    <section class="lg:col-span-3 flex flex-col space-y-4">
+      
+      <!-- Transformation Type Selector Card -->
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-3.5">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+          <div class="flex items-center space-x-2">
+            <span class="text-base">🔀</span>
+            <h2 class="text-sm font-bold text-slate-800">대칭 변환 방식 선택</h2>
+          </div>
+          <span id="badge-current-mode" class="text-xs font-mono font-bold px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-md border border-indigo-200">주대각선 ($\mathbf{A}^T$)</span>
+        </div>
+
+        <div class="grid grid-cols-1 gap-2">
+          <!-- Transpose (Main Diagonal) -->
+          <button onclick="setSymmetryMode('transpose')" id="mode-btn-transpose" class="mode-select-btn p-2.5 text-left rounded-xl border-2 border-indigo-500 bg-indigo-50/70 shadow-sm transition flex items-center justify-between">
+            <div class="flex items-center space-x-2.5">
+              <span class="text-lg">🔄</span>
+              <div>
+                <div class="text-xs font-bold text-indigo-950">주대각선 대칭 : 전치행렬 ($\mathbf{A}^T$)</div>
+                <p class="text-[10px] text-indigo-700 font-mono">$(\mathbf{A}^T)_{i,j} = A_{j,i}$ (교과서 102쪽)</p>
+              </div>
+            </div>
+            <span class="text-[10px] font-bold bg-indigo-600 text-white px-1.5 py-0.5 rounded">기본</span>
+          </button>
+
+          <!-- Horizontal Flip (Left-Right) -->
+          <button onclick="setSymmetryMode('horizontal')" id="mode-btn-horizontal" class="mode-select-btn p-2.5 text-left rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition flex items-center justify-between">
+            <div class="flex items-center space-x-2.5">
+              <span class="text-lg">↔️</span>
+              <div>
+                <div class="text-xs font-bold text-slate-800">좌우 대칭 (수직축 반전)</div>
+                <p class="text-[10px] text-slate-500 font-mono">$(\mathbf{A}')_{i,j} = A_{i, N-1-j}$</p>
+              </div>
+            </div>
+          </button>
+
+          <!-- Vertical Flip (Top-Bottom) -->
+          <button onclick="setSymmetryMode('vertical')" id="mode-btn-vertical" class="mode-select-btn p-2.5 text-left rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition flex items-center justify-between">
+            <div class="flex items-center space-x-2.5">
+              <span class="text-lg">↕️</span>
+              <div>
+                <div class="text-xs font-bold text-slate-800">상하 대칭 (수평축 반전)</div>
+                <p class="text-[10px] text-slate-500 font-mono">$(\mathbf{A}')_{i,j} = A_{N-1-i, j}$</p>
+              </div>
+            </div>
+          </button>
+
+          <!-- Anti-Diagonal Transpose -->
+          <button onclick="setSymmetryMode('anti-diagonal')" id="mode-btn-anti-diagonal" class="mode-select-btn p-2.5 text-left rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition flex items-center justify-between">
+            <div class="flex items-center space-x-2.5">
+              <span class="text-lg">🔀</span>
+              <div>
+                <div class="text-xs font-bold text-slate-800">부대각선 대칭 (Anti-diagonal)</div>
+                <p class="text-[10px] text-slate-500 font-mono">$(\mathbf{A}')_{i,j} = A_{N-1-j, N-1-i}$</p>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <!-- Invariant Diagonal Property Inspector -->
+        <div class="bg-amber-50/70 p-3 rounded-xl border border-amber-200/80 flex flex-col space-y-1.5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-1.5">
+              <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+              <span class="text-xs font-bold text-amber-950">대각 성분 불변 원리 ($a_{ii}$)</span>
+            </div>
+            <span class="text-[10px] font-mono text-amber-800 font-bold">$i = j$</span>
+          </div>
+          <p class="text-[11px] text-amber-900 leading-tight">
+            주대각선상의 성분($A_{1,1}, A_{2,2}, A_{3,3}, \dots$)은 행과 열 번호가 같으므로 <strong>전치행렬 변환 후에도 원래 자리를 유지</strong>합니다:
+            $$(\mathbf{A}^T)_{i,i} = A_{i,i}$$
+          </p>
+          <div class="text-[10px] text-amber-700 font-medium">
+            * 행렬 입력창 우측 상단의 <span class="inline-block w-2 h-2 rounded-full bg-amber-500 align-middle"></span> 표시는 대각선 성분임을 나타냅니다.
+          </div>
+        </div>
+
+        <!-- Selected Pixel Transformation Coordinate Mapping -->
+        <div class="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 flex flex-col space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-indigo-900">선택 픽셀 좌표 사상 (Mapping)</span>
+            <span id="selected-coords-mapping" class="text-[11px] font-mono text-indigo-700 font-bold">(1, 2) $\to$ (2, 1)</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-center">
+            <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-sm flex flex-col items-center">
+              <span class="text-[10px] text-slate-500 font-bold mb-0.5">원본 위치 $\mathbf{A}_{i,j}$</span>
+              <div id="inspector-src-color" class="w-8 h-8 rounded border border-slate-200 shadow-inner"></div>
+              <span id="inspector-src-val" class="text-[10px] font-mono font-bold mt-1 text-slate-700">(0,0,0)</span>
+            </div>
+            <div class="bg-white p-2 rounded-lg border border-indigo-200 shadow-sm flex flex-col items-center">
+              <span class="text-[10px] text-indigo-700 font-bold mb-0.5">변환 위치 $\mathbf{A}'_{i',j'}$</span>
+              <div id="inspector-dst-color" class="w-8 h-8 rounded border border-indigo-300 shadow-inner"></div>
+              <span id="inspector-dst-val" class="text-[10px] font-mono font-bold mt-1 text-indigo-900">(0,0,0)</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- AI Math Guide Note -->
+      <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-2xl shadow-sm space-y-2">
+        <div class="flex items-center space-x-2">
+          <span class="text-amber-400 font-bold text-sm">💡 AI 수학 개념: 전치행렬과 데이터 증강</span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          행렬 $\mathbf{A}$의 제$i$행, 제$j$열의 성분을 제$j$행, 제$i$열의 성분으로 치환하는 행렬을 <strong>전치행렬($\mathbf{A}^T$)</strong>이라 합니다.
+          인공지능 컴퓨터 비전에서는 학습 데이터가 부족할 때 원본 이미지를 전치($\mathbf{A}^T$)하거나 좌우/상하로 반전시켜 모델의 대칭 인식 성능을 높이는 <strong>데이터 증강(Data Augmentation)</strong> 기법의 핵심 기초 원리로 활용됩니다.
+        </p>
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 2: Center] RGB Channel Original vs Transformed Matrices (5 Cols) -->
+    <section class="lg:col-span-5 flex flex-col space-y-3">
+      
+      <!-- Channel Selector Tabs -->
+      <div class="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
+          <button id="tab-btn-all" onclick="switchChannelView('all')" class="ch-tab-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white shadow text-slate-900">RGB 3채널 전체</button>
+          <button id="tab-btn-r" onclick="switchChannelView('r')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-rose-600 hover:bg-white/60">Red ($\mathbf{R}$)</button>
+          <button id="tab-btn-g" onclick="switchChannelView('g')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-emerald-600 hover:bg-white/60">Green ($\mathbf{G}$)</button>
+          <button id="tab-btn-b" onclick="switchChannelView('b')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-sky-600 hover:bg-white/60">Blue ($\mathbf{B}$)</button>
+        </div>
+
+        <div class="text-[11px] text-slate-400 font-medium">
+          실시간 입력 수정: <span class="font-bold text-indigo-600">원본 셀 값 편집 가능</span>
+        </div>
+      </div>
+
+      <!-- Matrices Scroll Area -->
+      <div id="matrices-wrapper" class="space-y-4 flex-1 overflow-y-auto max-h-[calc(100vh-140px)] pr-1">
+        
+        <!-- RED CHANNEL BLOCK -->
+        <div id="block-channel-r" class="bg-white rounded-2xl border border-rose-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-rose-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-rose-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-rose-900">Red 채널 : 원본 $\mathbf{R}$ vs <span id="label-trans-r">변환 행렬 $\mathbf{R}^T$</span></h2>
+            </div>
+            <span class="text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">빨강 화소</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-center items-center">
+            <!-- Original Matrix R -->
+            <div class="bg-rose-50/30 p-2.5 rounded-xl border border-rose-100">
+              <div class="text-[11px] font-bold text-rose-900 mb-1.5 flex items-center justify-center space-x-1">
+                <span>원본 행렬 $\mathbf{R}$ (편집 가능)</span>
+              </div>
+              <div id="grid-orig-r" class="inline-flex flex-col gap-1"></div>
+            </div>
+            <!-- Transformed Matrix R -->
+            <div class="bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-200">
+              <div class="text-[11px] font-bold text-indigo-900 mb-1.5 flex items-center justify-center space-x-1">
+                <span>대칭 변환 행렬 $\mathbf{R}'$</span>
+              </div>
+              <div id="grid-trans-r" class="inline-flex flex-col gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GREEN CHANNEL BLOCK -->
+        <div id="block-channel-g" class="bg-white rounded-2xl border border-emerald-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-emerald-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-emerald-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-emerald-900">Green 채널 : 원본 $\mathbf{G}$ vs <span id="label-trans-g">변환 행렬 $\mathbf{G}^T$</span></h2>
+            </div>
+            <span class="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">초록 화소</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-center items-center">
+            <!-- Original Matrix G -->
+            <div class="bg-emerald-50/30 p-2.5 rounded-xl border border-emerald-100">
+              <div class="text-[11px] font-bold text-emerald-900 mb-1.5">원본 행렬 $\mathbf{G}$ (편집 가능)</div>
+              <div id="grid-orig-g" class="inline-flex flex-col gap-1"></div>
+            </div>
+            <!-- Transformed Matrix G -->
+            <div class="bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-200">
+              <div class="text-[11px] font-bold text-indigo-900 mb-1.5">대칭 변환 행렬 $\mathbf{G}'$</div>
+              <div id="grid-trans-g" class="inline-flex flex-col gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BLUE CHANNEL BLOCK -->
+        <div id="block-channel-b" class="bg-white rounded-2xl border border-sky-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-sky-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-sky-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-sky-900">Blue 채널 : 원본 $\mathbf{B}$ vs <span id="label-trans-b">변환 행렬 $\mathbf{B}^T$</span></h2>
+            </div>
+            <span class="text-[11px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded">파랑 화소</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-center items-center">
+            <!-- Original Matrix B -->
+            <div class="bg-sky-50/30 p-2.5 rounded-xl border border-sky-100">
+              <div class="text-[11px] font-bold text-sky-900 mb-1.5">원본 행렬 $\mathbf{B}$ (편집 가능)</div>
+              <div id="grid-orig-b" class="inline-flex flex-col gap-1"></div>
+            </div>
+            <!-- Transformed Matrix B -->
+            <div class="bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-200">
+              <div class="text-[11px] font-bold text-indigo-900 mb-1.5">대칭 변환 행렬 $\mathbf{B}'$</div>
+              <div id="grid-trans-b" class="inline-flex flex-col gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 3: Right] Dual Canvases Viewer & KaTeX Coordinate Inspector (4 Cols) -->
+    <section class="lg:col-span-4 flex flex-col space-y-4">
+
+      <!-- Rendered Image Canvas Card -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+            <h2 class="text-sm font-bold text-slate-800">대칭 변환 캔버스 렌더링 뷰</h2>
+          </div>
+          <button onclick="exportAllMatricesCSV()" class="text-xs px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-medium rounded-lg border border-slate-200 shadow-sm transition">
+            📊 CSV 복사
+          </button>
+        </div>
+
+        <div class="p-4 flex flex-col items-center justify-center bg-slate-100/50 space-y-3.5">
+          
+          <!-- Side-by-Side Comparison Canvases -->
+          <div class="grid grid-cols-2 gap-3 w-full">
+            <!-- Canvas Orig -->
+            <div class="flex flex-col items-center bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm">
+              <div class="flex items-center justify-between w-full mb-1.5 px-1">
+                <span class="text-xs font-bold text-slate-700">원본 이미지 $\mathbf{A}$</span>
+                <span class="text-[10px] font-mono text-indigo-600 font-bold">(i, j)</span>
+              </div>
+              <canvas id="canvas-orig" width="160" height="160" class="pixel-canvas rounded-xl w-[120px] h-[120px] sm:w-[140px] sm:h-[140px] border border-slate-200 cursor-pointer bg-white shadow-inner"></canvas>
+            </div>
+
+            <!-- Canvas Transformed -->
+            <div class="flex flex-col items-center bg-white p-2.5 rounded-2xl border-2 border-indigo-400 shadow-sm">
+              <div class="flex items-center justify-between w-full mb-1.5 px-1">
+                <span id="label-canvas-trans" class="text-xs font-bold text-indigo-950">변환 이미지 ($\mathbf{A}^T$)</span>
+                <span class="text-[10px] font-mono text-amber-600 font-bold">(j, i)</span>
+              </div>
+              <canvas id="canvas-trans" width="160" height="160" class="pixel-canvas rounded-xl w-[120px] h-[120px] sm:w-[140px] sm:h-[140px] border border-indigo-200 cursor-pointer bg-white shadow-inner"></canvas>
+            </div>
+          </div>
+
+          <!-- Axis Overlay Toggle Control -->
+          <div class="flex items-center justify-between w-full bg-white px-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-700 shadow-sm">
+            <label class="inline-flex items-center cursor-pointer select-none space-x-2">
+              <input type="checkbox" id="toggle-axis-overlay" checked onchange="updateAllCanvases()" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4">
+              <span class="font-medium">대칭축 가이드선(빨간 점선) 캔버스 오버레이 표시</span>
+            </label>
+            <span class="text-[10px] text-rose-500 font-bold">대칭 기준선</span>
+          </div>
+
+          <p class="text-[11px] text-slate-400 text-center leading-tight">💡 캔버스의 특정 화소를 클릭하면 해당 위치의 좌표 사상 및 색상 벡터 수식이 아래에 표시됩니다.</p>
+        </div>
+
+        <!-- Selected Pixel Transformation Formula Inspector -->
+        <div class="p-4 border-t border-slate-100 bg-white">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-slate-700">선택 픽셀 대칭 변환 벡터 수식</span>
+            <span id="selected-coord-badge" class="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded text-slate-600">좌표 사상</span>
+          </div>
+          <div id="pixel-math-formula" class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center text-xs sm:text-sm font-mono overflow-x-auto min-h-[90px] flex items-center justify-center">
+            <!-- KaTeX Formula dynamically injected -->
+          </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px]">
+          <span class="text-slate-500 font-medium">현재 적용된 대칭 모드:</span>
+          <div class="flex items-center space-x-1.5 font-mono font-bold">
+            <span id="stat-mode-status" class="text-indigo-900 bg-indigo-50 px-2.5 py-0.5 rounded border border-indigo-200">주대각선 전치 ((i,j) ↔ (j,i))</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 flex items-center space-x-2 pointer-events-none">
+    <span id="toast-icon">✨</span>
+    <span id="toast-message">알림</span>
+  </div>
+
+  <script>
+    let currentGridSize = 3; // Default 3x3 as in textbook
+    let currentSymmetryMode = 'transpose'; // 'transpose', 'horizontal', 'vertical', 'anti-diagonal'
+    let selectedPixel = { r: 0, c: 0 }; // Default selection (row 1, col 1)
+
+    // Original 3D Tensor RGB matrices (0 ~ 255)
+    let origR = [];
+    let origG = [];
+    let origB = [];
+
+    // Transformed 3D Tensor RGB matrices
+    let transR = [];
+    let transG = [];
+    let transB = [];
+
+    // Preset data generator
+    function getPresetData(presetName, size) {
+      const R = Array(size).fill(0).map(() => Array(size).fill(0));
+      const G = Array(size).fill(0).map(() => Array(size).fill(0));
+      const B = Array(size).fill(0).map(() => Array(size).fill(0));
+
+      const setColor = (r, c, red, green, blue) => {
+        if (r >= 0 && r < size && c >= 0 && c < size) {
+          R[r][c] = red;
+          G[r][c] = green;
+          B[r][c] = blue;
+        }
+      };
+
+      if (presetName === 'asym-multi' || !presetName) {
+        // Completely asymmetric multi-color image: reacts distinctly to Transpose, H-flip, V-flip, and Anti-diagonal
+        const RED = [239, 68, 68];
+        const YELLOW = [245, 158, 11];
+        const BLUE = [59, 130, 246];
+        const GREEN = [16, 185, 129];
+        const WHITE = [241, 245, 249];
+
+        // Background: clean light slate
+        for (let r = 0; r < size; r++) {
+          for (let c = 0; c < size; c++) {
+            setColor(r, c, WHITE[0], WHITE[1], WHITE[2]);
+          }
+        }
+
+        if (size === 3) {
+          // Row 0: Red, Yellow, Blue
+          setColor(0, 0, RED[0], RED[1], RED[2]);
+          setColor(0, 1, YELLOW[0], YELLOW[1], YELLOW[2]);
+          setColor(0, 2, BLUE[0], BLUE[1], BLUE[2]);
+          // Row 1: Red, White, White
+          setColor(1, 0, RED[0], RED[1], RED[2]);
+          // Row 2: Green, White, White
+          setColor(2, 0, GREEN[0], GREEN[1], GREEN[2]);
+        } else {
+          // 5x5: Extended Asymmetric Pattern
+          setColor(0, 0, RED[0], RED[1], RED[2]);
+          setColor(0, 1, RED[0], RED[1], RED[2]);
+          setColor(0, 2, YELLOW[0], YELLOW[1], YELLOW[2]);
+          setColor(0, 3, YELLOW[0], YELLOW[1], YELLOW[2]);
+          setColor(0, 4, BLUE[0], BLUE[1], BLUE[2]);
+          setColor(1, 4, BLUE[0], BLUE[1], BLUE[2]);
+          setColor(2, 0, RED[0], RED[1], RED[2]);
+          setColor(2, 1, RED[0], RED[1], RED[2]);
+          setColor(2, 2, GREEN[0], GREEN[1], GREEN[2]);
+          setColor(2, 3, GREEN[0], GREEN[1], GREEN[2]);
+          setColor(1, 0, RED[0], RED[1], RED[2]);
+          setColor(3, 0, RED[0], RED[1], RED[2]);
+          setColor(4, 0, GREEN[0], GREEN[1], GREEN[2]);
+          setColor(4, 1, GREEN[0], GREEN[1], GREEN[2]);
+        }
+      } else if (presetName === 'textbook-stripe') {
+        if (size === 3) {
+          // Textbook Page 102~103 Exact Match:
+          // Row 0: Yellow (255, 255, 0)
+          // Row 1: Blue   (97, 130, 214)
+          // Row 2: Yellow (255, 255, 0)
+          R[0] = [255, 255, 255]; G[0] = [255, 255, 255]; B[0] = [0, 0, 0];
+          R[1] = [97, 97, 97];    G[1] = [130, 130, 130]; B[1] = [214, 214, 214];
+          R[2] = [255, 255, 255]; G[2] = [255, 255, 255]; B[2] = [0, 0, 0];
+        } else {
+          // 5x5 Extension: Top/Bottom 2 rows Yellow, Middle 1 row Blue
+          for (let r = 0; r < 5; r++) {
+            for (let c = 0; c < 5; c++) {
+              if (r === 2) {
+                R[r][c] = 97; G[r][c] = 130; B[r][c] = 214; // Blue center stripe
+              } else {
+                R[r][c] = 255; G[r][c] = 255; B[r][c] = 0;   // Yellow stripes
+              }
+            }
+          }
+        }
+      } else if (presetName === 'asym-f') {
+        const WHITE = [241, 245, 249];
+        for (let r = 0; r < size; r++) {
+          for (let c = 0; c < size; c++) {
+            setColor(r, c, WHITE[0], WHITE[1], WHITE[2]);
+          }
+        }
+
+        if (size === 3) {
+          setColor(0, 0, 239, 68, 68);  setColor(0, 1, 239, 68, 68);  setColor(0, 2, 245, 158, 11);
+          setColor(1, 0, 239, 68, 68);  setColor(1, 1, 59, 130, 246);
+          setColor(2, 0, 239, 68, 68);
+        } else {
+          const fPattern = [
+            [1, 1, 1, 1, 0],
+            [1, 0, 0, 0, 0],
+            [1, 1, 1, 0, 0],
+            [1, 0, 0, 0, 0],
+            [1, 0, 0, 0, 0]
+          ];
+          for (let r = 0; r < size; r++) {
+            for (let c = 0; c < size; c++) {
+              if (fPattern[r][c] === 1) {
+                if (r === 0) setColor(r, c, 239, 68, 68);
+                else if (r === 2) setColor(r, c, 245, 158, 11);
+                else setColor(r, c, 59, 130, 246);
+              }
+            }
+          }
+        }
+      } else if (presetName === 'corner-gradient') {
+        for (let r = 0; r < size; r++) {
+          for (let c = 0; c < size; c++) {
+            R[r][c] = Math.round((r / (size - 1)) * 240);
+            G[r][c] = Math.round(180 - (c / (size - 1)) * 140);
+            B[r][c] = Math.round(((r + c) / (2 * size - 2)) * 255);
+          }
+        }
+      }
+
+      return { R, G, B };
+    }
+
+    function initData() {
+      const preset = getPresetData('asym-multi', currentGridSize);
+      origR = preset.R;
+      origG = preset.G;
+      origB = preset.B;
+
+      recalculateTransformedMatrix();
+    }
+
+    // Mathematical Symmetry Mapping Engine
+    function getTransformedCoords(r, c, size, mode) {
+      if (mode === 'transpose') {
+        // Main diagonal symmetry: (i, j) -> (j, i)
+        return { dstR: c, dstC: r };
+      } else if (mode === 'horizontal') {
+        // Horizontal flip (axis across columns): (i, j) -> (i, size - 1 - j)
+        return { dstR: r, dstC: size - 1 - c };
+      } else if (mode === 'vertical') {
+        // Vertical flip (axis across rows): (i, j) -> (size - 1 - i, j)
+        return { dstR: size - 1 - r, dstC: c };
+      } else if (mode === 'anti-diagonal') {
+        // Anti-diagonal symmetry: (i, j) -> (size - 1 - j, size - 1 - i)
+        return { dstR: size - 1 - c, dstC: size - 1 - r };
+      }
+      return { dstR: c, dstC: r };
+    }
+
+    function recalculateTransformedMatrix() {
+      const sz = currentGridSize;
+      transR = Array(sz).fill(0).map(() => Array(sz).fill(0));
+      transG = Array(sz).fill(0).map(() => Array(sz).fill(0));
+      transB = Array(sz).fill(0).map(() => Array(sz).fill(0));
+
+      for (let r = 0; r < sz; r++) {
+        for (let c = 0; c < sz; c++) {
+          const { dstR, dstC } = getTransformedCoords(r, c, sz, currentSymmetryMode);
+          transR[dstR][dstC] = origR[r][c];
+          transG[dstR][dstC] = origG[r][c];
+          transB[dstR][dstC] = origB[r][c];
+        }
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initData();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      setupEventListeners();
+
+      safeRenderMath(document.body);
+    });
+
+    function safeRenderMath(element) {
+      if (!element || !window.renderMathInElement) return;
+      try {
+        renderMathInElement(element, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false}
+          ],
+          throwOnError: false
+        });
+      } catch (e) {
+        console.warn('Math rendering error:', e);
+      }
+    }
+
+    function setupEventListeners() {
+      const canvasOrig = document.getElementById('canvas-orig');
+      const canvasTrans = document.getElementById('canvas-trans');
+
+      const handleCanvasClick = (canvas, isTrans, e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const col = Math.floor(((e.clientX - rect.left) * scaleX) / (canvas.width / currentGridSize));
+        const row = Math.floor(((e.clientY - rect.top) * scaleY) / (canvas.height / currentGridSize));
+
+        if (row >= 0 && row < currentGridSize && col >= 0 && col < currentGridSize) {
+          if (!isTrans) {
+            setSelectedPixel(row, col);
+          } else {
+            // Find which original pixel mapped to this transformed pixel
+            for (let r = 0; r < currentGridSize; r++) {
+              for (let c = 0; c < currentGridSize; c++) {
+                const { dstR, dstC } = getTransformedCoords(r, c, currentGridSize, currentSymmetryMode);
+                if (dstR === row && dstC === col) {
+                  setSelectedPixel(r, c);
+                  return;
+                }
+              }
+            }
+          }
+        }
+      };
+
+      if (canvasOrig) canvasOrig.addEventListener('click', (e) => handleCanvasClick(canvasOrig, false, e));
+      if (canvasTrans) canvasTrans.addEventListener('click', (e) => handleCanvasClick(canvasTrans, true, e));
+    }
+
+    // Unified selection dispatcher
+    function setSelectedPixel(r, c) {
+      selectedPixel = { r, c };
+      updateSelectedPixelInspector();
+      highlightSelectedCells();
+      updateAllCanvases();
+    }
+
+    function renderAllGrids() {
+      // Red Channel
+      renderSingleGrid('grid-orig-r', origR, 'orig-r', 'rose', false);
+      renderSingleGrid('grid-trans-r', transR, 'trans-r', 'indigo', true);
+
+      // Green Channel
+      renderSingleGrid('grid-orig-g', origG, 'orig-g', 'emerald', false);
+      renderSingleGrid('grid-trans-g', transG, 'trans-g', 'indigo', true);
+
+      // Blue Channel
+      renderSingleGrid('grid-orig-b', origB, 'orig-b', 'sky', false);
+      renderSingleGrid('grid-trans-b', transB, 'trans-b', 'indigo', true);
+
+      highlightSelectedCells();
+    }
+
+    function renderSingleGrid(containerId, matrix, tag, colorClass, isReadonly) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      const sz = currentGridSize;
+      let html = '';
+
+      const cellDimension = sz === 3 ? 'w-11 h-9 text-xs sm:text-sm' : 'w-8 h-7 text-[11px]';
+
+      for (let r = 0; r < sz; r++) {
+        html += `<div class="flex gap-1 justify-center">`;
+        for (let c = 0; c < sz; c++) {
+          const val = matrix[r][c] || 0;
+          const isDiag = (r === c);
+
+          html += `
+            <div class="${isDiag ? 'diagonal-cell' : ''}">
+              <input type="number" value="${val}"
+                     id="cell-${tag}-${r}-${c}"
+                     data-tag="${tag}" data-r="${r}" data-c="${c}"
+                     ${isReadonly ? 'readonly tabindex="-1"' : ''}
+                     onfocus="onCellFocus(${r}, ${c}, ${isReadonly})"
+                     oninput="onCellInput(event, '${tag}', ${r}, ${c})"
+                     class="matrix-input ${cellDimension} text-center font-mono font-bold rounded border border-slate-200 focus:outline-none focus:ring-2 focus:ring-${colorClass}-500 ${isReadonly ? 'bg-indigo-950 text-white shadow-inner cursor-default' : (isDiag ? 'bg-amber-50/70 border-amber-300 text-slate-900 font-extrabold' : 'bg-white text-slate-800')} transition-all">
+            </div>
+          `;
+        }
+        html += `</div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function updateTransformedGridsDOM() {
+      const sz = currentGridSize;
+      for (let r = 0; r < sz; r++) {
+        for (let c = 0; c < sz; c++) {
+          const cellR = document.getElementById(`cell-trans-r-${r}-${c}`);
+          const cellG = document.getElementById(`cell-trans-g-${r}-${c}`);
+          const cellB = document.getElementById(`cell-trans-b-${r}-${c}`);
+          if (cellR) cellR.value = transR[r][c];
+          if (cellG) cellG.value = transG[r][c];
+          if (cellB) cellB.value = transB[r][c];
+        }
+      }
+    }
+
+    function onCellFocus(r, c, isReadonly) {
+      if (!isReadonly) {
+        setSelectedPixel(r, c);
+      } else {
+        // If clicked on transformed grid, map back to source
+        for (let i = 0; i < currentGridSize; i++) {
+          for (let j = 0; j < currentGridSize; j++) {
+            const { dstR, dstC } = getTransformedCoords(i, j, currentGridSize, currentSymmetryMode);
+            if (dstR === r && dstC === c) {
+              setSelectedPixel(i, j);
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    function onCellInput(event, tag, r, c) {
+      let rawVal = event.target.value;
+      let val = parseInt(rawVal, 10);
+      if (isNaN(val)) val = 0;
+      val = Math.max(0, Math.min(255, val));
+      event.target.value = val;
+
+      if (tag === 'orig-r') origR[r][c] = val;
+      if (tag === 'orig-g') origG[r][c] = val;
+      if (tag === 'orig-b') origB[r][c] = val;
+
+      recalculateTransformedMatrix();
+      updateTransformedGridsDOM();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+    }
+
+    function highlightSelectedCells() {
+      document.querySelectorAll('.matrix-input').forEach(el => el.classList.remove('ring-2', 'ring-indigo-600', 'ring-amber-500', 'scale-105'));
+
+      const { r, c } = selectedPixel;
+      const { dstR, dstC } = getTransformedCoords(r, c, currentGridSize, currentSymmetryMode);
+
+      // Highlight original inputs
+      ['orig-r', 'orig-g', 'orig-b'].forEach(tag => {
+        const el = document.getElementById(`cell-${tag}-${r}-${c}`);
+        if (el) el.classList.add('ring-2', 'ring-indigo-600', 'scale-105');
+      });
+
+      // Highlight transformed corresponding cells
+      ['trans-r', 'trans-g', 'trans-b'].forEach(tag => {
+        const el = document.getElementById(`cell-${tag}-${dstR}-${dstC}`);
+        if (el) el.classList.add('ring-2', 'ring-amber-500', 'scale-105');
+      });
+    }
+
+    function updateAllCanvases() {
+      const showAxis = document.getElementById('toggle-axis-overlay')?.checked ?? true;
+      renderCanvasWithOverlay('canvas-orig', origR, origG, origB, showAxis, false);
+      renderCanvasWithOverlay('canvas-trans', transR, transG, transB, showAxis, true);
+    }
+
+    function renderCanvasWithOverlay(canvasId, matR, matG, matB, showAxis, isTrans) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const sz = currentGridSize;
+
+      const width = canvas.width;
+      const height = canvas.height;
+      const cellW = width / sz;
+      const cellH = height / sz;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // 1. Draw Pixels
+      for (let r = 0; r < sz; r++) {
+        for (let c = 0; c < sz; c++) {
+          const red = matR[r][c] || 0;
+          const green = matG[r][c] || 0;
+          const blue = matB[r][c] || 0;
+
+          ctx.fillStyle = `rgb(${red}, ${green}, ${blue})`;
+          ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+
+          // Grid lines
+          ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+        }
+      }
+
+      // 2. Highlight currently selected pixel indicator box
+      let activeR = selectedPixel.r;
+      let activeC = selectedPixel.c;
+      if (isTrans) {
+        const mapped = getTransformedCoords(selectedPixel.r, selectedPixel.c, sz, currentSymmetryMode);
+        activeR = mapped.dstR;
+        activeC = mapped.dstC;
+      }
+
+      ctx.save();
+      const x = activeC * cellW;
+      const y = activeR * cellH;
+
+      // Outer contrasting white ring
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(x + 2, y + 2, cellW - 4, cellH - 4);
+
+      // Inner vibrant colored ring (Blue for Original, Pink-Magenta for Transformed)
+      ctx.strokeStyle = isTrans ? '#e11d48' : '#2563eb';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(x + 2, y + 2, cellW - 4, cellH - 4);
+      ctx.restore();
+
+      // 3. Draw Axis Overlay
+      if (showAxis) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.85)'; // Semi-transparent Red
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([5, 4]);
+
+        if (currentSymmetryMode === 'transpose') {
+          // Main Diagonal line from (0,0) to (W, H)
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(width, height);
+          ctx.stroke();
+        } else if (currentSymmetryMode === 'horizontal') {
+          // Vertical axis in center
+          ctx.beginPath();
+          ctx.moveTo(width / 2, 0);
+          ctx.lineTo(width / 2, height);
+          ctx.stroke();
+        } else if (currentSymmetryMode === 'vertical') {
+          // Horizontal axis in center
+          ctx.beginPath();
+          ctx.moveTo(0, height / 2);
+          ctx.lineTo(width, height / 2);
+          ctx.stroke();
+        } else if (currentSymmetryMode === 'anti-diagonal') {
+          // Anti-diagonal line from (0, H) to (W, 0)
+          ctx.beginPath();
+          ctx.moveTo(0, height);
+          ctx.lineTo(width, 0);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
+
+    function updateSelectedPixelInspector() {
+      const { r, c } = selectedPixel;
+      const { dstR, dstC } = getTransformedCoords(r, c, currentGridSize, currentSymmetryMode);
+
+      const srcR = origR[r][c] || 0, srcG = origG[r][c] || 0, srcB = origB[r][c] || 0;
+      const dstRVal = transR[dstR][dstC] || 0, dstGVal = transG[dstR][dstC] || 0, dstBVal = transB[dstR][dstC] || 0;
+
+      // Update Left Sidebar Mapping preview
+      const coordsText = `(${r + 1}, ${c + 1}) $\\to$ (${dstR + 1}, ${dstC + 1})`;
+      const coordsElem = document.getElementById('selected-coords-mapping');
+      if (coordsElem) {
+        coordsElem.innerHTML = coordsText;
+        safeRenderMath(coordsElem);
+      }
+
+      const elSrcColor = document.getElementById('inspector-src-color');
+      const elDstColor = document.getElementById('inspector-dst-color');
+      const elSrcVal = document.getElementById('inspector-src-val');
+      const elDstVal = document.getElementById('inspector-dst-val');
+
+      if (elSrcColor) elSrcColor.style.backgroundColor = `rgb(${srcR}, ${srcG}, ${srcB})`;
+      if (elDstColor) elDstColor.style.backgroundColor = `rgb(${dstRVal}, ${dstGVal}, ${dstBVal})`;
+      if (elSrcVal) elSrcVal.innerText = `(${srcR},${srcG},${srcB})`;
+      if (elDstVal) elDstVal.innerText = `(${dstRVal},${dstGVal},${dstBVal})`;
+
+      // Update Right Inspector Formula
+      const badge = document.getElementById('selected-coord-badge');
+      if (badge) {
+        badge.innerHTML = `좌표 사상: $(i=${r + 1}, j=${c + 1}) \\to (i'=${dstR + 1}, j'=${dstC + 1})$`;
+        safeRenderMath(badge);
+      }
+
+      const formulaBox = document.getElementById('pixel-math-formula');
+      if (formulaBox) {
+        const isDiag = (r === c && currentSymmetryMode === 'transpose');
+        const diagNote = isDiag ? `\\quad \\text{\\scriptsize (대각 성분 불변!)}` : '';
+
+        formulaBox.innerHTML = `$$\\mathbf{P}'_{${dstR + 1},${dstC + 1}} = \\mathbf{P}_{${r + 1},${c + 1}} \\iff \\begin{bmatrix} R \\\\ G \\\\ B \\end{bmatrix}'_{${dstR + 1},${dstC + 1}} = \\begin{bmatrix} ${srcR} \\\\ ${srcG} \\\\ ${srcB} \\end{bmatrix} ${diagNote}$$`;
+        safeRenderMath(formulaBox);
+      }
+    }
+
+    function setSymmetryMode(mode) {
+      currentSymmetryMode = mode;
+
+      // Update button active UI
+      document.querySelectorAll('.mode-select-btn').forEach(btn => {
+        btn.classList.remove('border-2', 'border-indigo-500', 'bg-indigo-50/70', 'shadow-sm');
+        btn.classList.add('border-slate-200', 'bg-slate-50');
+      });
+
+      const activeBtn = document.getElementById(`mode-btn-${mode}`);
+      if (activeBtn) {
+        activeBtn.classList.remove('border-slate-200', 'bg-slate-50');
+        activeBtn.classList.add('border-2', 'border-indigo-500', 'bg-indigo-50/70', 'shadow-sm');
+      }
+
+      // Update Badge and Titles
+      const badge = document.getElementById('badge-current-mode');
+      const statElem = document.getElementById('stat-mode-status');
+      const labelTransR = document.getElementById('label-trans-r');
+      const labelTransG = document.getElementById('label-trans-g');
+      const labelTransB = document.getElementById('label-trans-b');
+      const canvasLabel = document.getElementById('label-canvas-trans');
+
+      if (mode === 'transpose') {
+        if (badge) badge.innerHTML = '주대각선 ($\\mathbf{A}^T$)';
+        if (statElem) statElem.innerText = '주대각선 전치 ((i,j) ↔ (j,i))';
+        if (labelTransR) labelTransR.innerHTML = '변환 행렬 $\\mathbf{R}^T$';
+        if (labelTransG) labelTransG.innerHTML = '변환 행렬 $\\mathbf{G}^T$';
+        if (labelTransB) labelTransB.innerHTML = '변환 행렬 $\\mathbf{B}^T$';
+        if (canvasLabel) canvasLabel.innerHTML = '변환 이미지 ($\\mathbf{A}^T$)';
+        showToast('주대각선 대칭 (전치행렬 A^T) 변환이 적용되었습니다.');
+      } else if (mode === 'horizontal') {
+        if (badge) badge.innerHTML = '좌우 대칭 (열 반전)';
+        if (statElem) statElem.innerText = '좌우 대칭 ((i, j) ↔ (i, N-1-j))';
+        if (labelTransR) labelTransR.innerHTML = '좌우 반전 $\\mathbf{R}\'$';
+        if (labelTransG) labelTransG.innerHTML = '좌우 반전 $\\mathbf{G}\'$';
+        if (labelTransB) labelTransB.innerHTML = '좌우 반전 $\\mathbf{B}\'$';
+        if (canvasLabel) canvasLabel.innerHTML = '좌우 대칭 이미지';
+        showToast('좌우 대칭(수직축 기준 반전) 변환이 적용되었습니다.');
+      } else if (mode === 'vertical') {
+        if (badge) badge.innerHTML = '상하 대칭 (행 반전)';
+        if (statElem) statElem.innerText = '상하 대칭 ((i, j) ↔ (N-1-i, j))';
+        if (labelTransR) labelTransR.innerHTML = '상하 반전 $\\mathbf{R}\'$';
+        if (labelTransG) labelTransG.innerHTML = '상하 반전 $\\mathbf{G}\'$';
+        if (labelTransB) labelTransB.innerHTML = '상하 반전 $\\mathbf{B}\'$';
+        if (canvasLabel) canvasLabel.innerHTML = '상하 대칭 이미지';
+        showToast('상하 대칭(수평축 기준 반전) 변환이 적용되었습니다.');
+      } else if (mode === 'anti-diagonal') {
+        if (badge) badge.innerHTML = '부대각선 대칭';
+        if (statElem) statElem.innerText = '부대각선 대칭 ((i,j) ↔ (N-1-j, N-1-i))';
+        if (labelTransR) labelTransR.innerHTML = '부대각 대칭 $\\mathbf{R}\'$';
+        if (labelTransG) labelTransG.innerHTML = '부대각 대칭 $\\mathbf{G}\'$';
+        if (labelTransB) labelTransB.innerHTML = '부대각 대칭 $\\mathbf{B}\'$';
+        if (canvasLabel) canvasLabel.innerHTML = '부대각선 대칭 이미지';
+        showToast('부대각선 기준 대칭 변환이 적용되었습니다.');
+      }
+
+      [badge, labelTransR, labelTransG, labelTransB, canvasLabel].forEach(el => safeRenderMath(el));
+
+      recalculateTransformedMatrix();
+      updateTransformedGridsDOM();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      highlightSelectedCells();
+    }
+
+    function changeGridSize(sz) {
+      if (currentGridSize === sz) return;
+      currentGridSize = sz;
+
+      // Update Size Buttons UI
+      const btn3 = document.getElementById('size-btn-3');
+      const btn5 = document.getElementById('size-btn-5');
+      if (sz === 3) {
+        if (btn3) btn3.className = 'px-2.5 py-1 text-xs font-bold bg-white text-indigo-700 rounded-lg shadow-sm border border-slate-200';
+        if (btn5) btn5.className = 'px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-lg transition';
+      } else {
+        if (btn5) btn5.className = 'px-2.5 py-1 text-xs font-bold bg-white text-indigo-700 rounded-lg shadow-sm border border-slate-200';
+        if (btn3) btn3.className = 'px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-lg transition';
+      }
+
+      selectedPixel = { r: 0, c: 0 };
+      initData();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      showToast(`그리드 크기가 ${sz} × ${sz}로 변경되었습니다.`);
+    }
+
+    function loadScenarioPreset(name) {
+      const preset = getPresetData(name, currentGridSize);
+      origR = preset.R;
+      origG = preset.G;
+      origB = preset.B;
+
+      recalculateTransformedMatrix();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      showToast('새로운 이미지 프리셋을 불러왔습니다.');
+    }
+
+    function resetAll() {
+      for (let r = 0; r < currentGridSize; r++) {
+        for (let c = 0; c < currentGridSize; c++) {
+          origR[r][c] = 0;
+          origG[r][c] = 0;
+          origB[r][c] = 0;
+        }
+      }
+      recalculateTransformedMatrix();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      showToast('모든 행렬 데이터가 0으로 초기화되었습니다.');
+    }
+
+    function switchChannelView(view) {
+      const blockR = document.getElementById('block-channel-r');
+      const blockG = document.getElementById('block-channel-g');
+      const blockB = document.getElementById('block-channel-b');
+
+      document.querySelectorAll('.ch-tab-btn').forEach(btn => {
+        btn.classList.remove('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+        btn.classList.add('text-slate-600');
+      });
+
+      if (view === 'all') {
+        if (blockR) blockR.classList.remove('hidden');
+        if (blockG) blockG.classList.remove('hidden');
+        if (blockB) blockB.classList.remove('hidden');
+        document.getElementById('tab-btn-all')?.classList.add('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+      } else if (view === 'r') {
+        if (blockR) blockR.classList.remove('hidden');
+        if (blockG) blockG.classList.add('hidden');
+        if (blockB) blockB.classList.add('hidden');
+        document.getElementById('tab-btn-r')?.classList.add('bg-white', 'shadow', 'text-rose-600', 'font-semibold');
+      } else if (view === 'g') {
+        if (blockR) blockR.classList.add('hidden');
+        if (blockG) blockG.classList.remove('hidden');
+        if (blockB) blockB.classList.add('hidden');
+        document.getElementById('tab-btn-g')?.classList.add('bg-white', 'shadow', 'text-emerald-600', 'font-semibold');
+      } else if (view === 'b') {
+        if (blockR) blockR.classList.add('hidden');
+        if (blockG) blockG.classList.add('hidden');
+        if (blockB) blockB.classList.remove('hidden');
+        document.getElementById('tab-btn-b')?.classList.add('bg-white', 'shadow', 'text-sky-600', 'font-semibold');
+      }
+    }
+
+    function exportAllMatricesCSV() {
+      let csv = `=== Original RGB Tensor Matrix A (${currentGridSize}x${currentGridSize}) ===\n`;
+      csv += `[R Channel]\n` + origR.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[G Channel]\n` + origG.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[B Channel]\n` + origB.map(row => row.join(',')).join('\n') + `\n\n`;
+
+      csv += `=== Transformed RGB Tensor Matrix A' (Mode: ${currentSymmetryMode}) ===\n`;
+      csv += `[R' Channel]\n` + transR.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[G' Channel]\n` + transG.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[B' Channel]\n` + transB.map(row => row.join(',')).join('\n') + `\n`;
+
+      const tempTextArea = document.createElement('textarea');
+      tempTextArea.value = csv;
+      document.body.appendChild(tempTextArea);
+      tempTextArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempTextArea);
+
+      showToast('📋 전체 원본 및 대칭 변환 CSV 데이터가 복사되었습니다.');
+    }
+
+    function showToast(msg, icon = '✨') {
+      const toast = document.getElementById('toast');
+      if (!toast) return;
+      document.getElementById('toast-icon').innerText = icon;
+      document.getElementById('toast-message').innerText = msg;
+      
+      toast.classList.remove('opacity-0', 'translate-y-[-100px]');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'translate-y-[-100px]');
+      }, 2400);
+    }
+  </script>
+</body>
+</html>
