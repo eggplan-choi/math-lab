@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>인공지능 수학 - 두 이미지의 일부 합성 (마스크 행렬과 아다마르 곱)</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f8fafc',
+              100: '#f1f5f9',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- KaTeX for Mathematical Formulas -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    
+    .matrix-input::-webkit-outer-spin-button,
+    .matrix-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .matrix-input {
+      -moz-appearance: textfield;
+    }
+    
+    .pixel-canvas {
+      image-rendering: pixelated;
+    }
+
+    .mask-btn {
+      transition: all 0.15s ease-in-out;
+    }
+    .mask-btn:active {
+      transform: scale(0.92);
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-[1700px] mx-auto px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-indigo-600 to-rose-500 flex items-center justify-center text-white font-bold shadow-sm text-sm">
+          $\mathbf{X}\odot\mathbf{P}$
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold text-slate-900 leading-tight">인공지능 수학 : 두 이미지의 일부 합성과 아다마르 곱($\odot$)</h1>
+          <p class="text-xs text-slate-500">마스크 행렬 $\mathbf{P}$와 전체 $1$ 행렬 $\mathbf{J}$를 이용한 합성 $\mathbf{Z} = \mathbf{X} \odot \mathbf{P} + \mathbf{Y} \odot (\mathbf{J} - \mathbf{P})$ 탐구</p>
+        </div>
+      </div>
+
+      <!-- Preset Controls -->
+      <div class="flex items-center space-x-1.5">
+        <button onclick="loadScenarioPreset('red-blue-solid')" class="px-2.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-100 border border-rose-300 rounded-lg hover:bg-rose-200 shadow-sm transition">🔴 빨강 X + 🔵 파랑 Y (단색 직관)</button>
+        <button onclick="loadScenarioPreset('tv-in-room')" class="px-2.5 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 shadow-sm transition">📺 거실 TV 속 설산 (교과서)</button>
+        <button onclick="loadScenarioPreset('picture-frame')" class="px-2.5 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 shadow-sm transition">🖼️ 액자 속 하트 합성</button>
+        <button onclick="loadScenarioPreset('window-sunset')" class="px-2.5 py-1.5 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 shadow-sm transition">🪟 창문 너머 석양 합성</button>
+        <button onclick="resetAll()" class="px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-rose-50 hover:text-rose-600 shadow-sm transition">🔄 초기화</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main 3-Column Layout -->
+  <main class="max-w-[1700px] mx-auto px-4 sm:px-6 py-4 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+    <!-- [COLUMN 1: Left] Mask Matrix P Interactive Editor & Matrix J Tools (3 Cols) -->
+    <section class="lg:col-span-3 flex flex-col space-y-4">
+      
+      <!-- Mask Matrix P Interactive Brush Card -->
+      <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+          <div class="flex items-center space-x-2">
+            <span class="text-base">🎭</span>
+            <h2 class="text-sm font-bold text-slate-800">마스크 행렬 ($\mathbf{P}$) 대화형 편집</h2>
+          </div>
+          <span id="badge-mask-p-count" class="text-xs font-mono font-bold px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-md border border-indigo-200">$P=1$: 6칸 (24%)</span>
+        </div>
+
+        <p class="text-[11px] text-slate-500 leading-tight">
+          아래 버튼을 클릭하여 $X$에서 가져올 위치는 <strong class="text-indigo-600 font-bold">1</strong>, $Y$를 남길 위치는 <strong class="text-slate-400 font-bold">0</strong>으로 토글하세요.
+        </p>
+
+        <!-- 5x5 Mask P Interactive Toggle Pad -->
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-col items-center">
+          <div class="text-[11px] font-bold text-slate-600 mb-2 flex items-center justify-between w-full px-1">
+            <span>행렬 $\mathbf{P}$ (1: 이미지 $X$ / 0: 이미지 $Y$)</span>
+            <span class="text-[10px] text-slate-400">클릭 시 0 $\leftrightarrow$ 1</span>
+          </div>
+          <div id="interactive-mask-pad" class="grid grid-cols-5 gap-1.5 p-1 bg-white rounded-lg border border-slate-200 shadow-inner">
+            <!-- 25 toggle buttons rendered dynamically -->
+          </div>
+        </div>
+
+        <!-- Quick Mask Pattern Presets -->
+        <div class="space-y-1.5">
+          <span class="text-xs font-bold text-slate-700">마스크 형태 프리셋 선택</span>
+          <div class="grid grid-cols-3 gap-1.5">
+            <button onclick="applyMaskPattern('tv')" class="py-1.5 text-[11px] font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-lg border border-indigo-200 transition">📺 TV(3×2)</button>
+            <button onclick="applyMaskPattern('center')" class="py-1.5 text-[11px] font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 transition">🎯 중앙 1점</button>
+            <button onclick="applyMaskPattern('cross')" class="py-1.5 text-[11px] font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 transition">➕ 십자형</button>
+            <button onclick="applyMaskPattern('diag')" class="py-1.5 text-[11px] font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 transition">📐 대각선</button>
+            <button onclick="applyMaskPattern('invert')" class="py-1.5 text-[11px] font-semibold bg-purple-50 hover:bg-purple-100 text-purple-800 rounded-lg border border-purple-200 transition">🔄 반전 ($\mathbf{J}-\mathbf{P}$)</button>
+            <button onclick="applyMaskPattern('all-x')" class="py-1.5 text-[11px] font-semibold bg-cyan-50 hover:bg-cyan-100 text-cyan-800 rounded-lg border border-cyan-200 transition">전체 $X$ ($\mathbf{P}=\mathbf{J}$)</button>
+          </div>
+        </div>
+
+        <!-- Mask Complement Matrix (J - P) Inspector -->
+        <div class="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 flex flex-col space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-indigo-900">선택 픽셀 출처 및 마스크 상태</span>
+            <span id="selected-pixel-coords" class="text-[11px] font-mono text-indigo-700 font-bold">(1, 1)</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-center">
+            <div class="bg-white p-2 rounded-lg border border-cyan-100 shadow-sm flex flex-col items-center">
+              <span class="text-[10px] text-cyan-700 font-bold mb-0.5">마스크 성분 $P_{i,j}$</span>
+              <span id="inspector-p-val" class="text-base font-mono font-extrabold text-cyan-600">0</span>
+              <span id="inspector-p-source" class="text-[9px] text-slate-400 mt-0.5">X 반영 안 됨</span>
+            </div>
+            <div class="bg-white p-2 rounded-lg border border-purple-100 shadow-sm flex flex-col items-center">
+              <span class="text-[10px] text-purple-700 font-bold mb-0.5">여마스크 $(J-P)_{i,j}$</span>
+              <span id="inspector-jp-val" class="text-base font-mono font-extrabold text-purple-600">1</span>
+              <span id="inspector-jp-source" class="text-[9px] text-emerald-600 font-bold mt-0.5">Y 성분 채택</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- AI Math Guide Note -->
+      <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-4 rounded-2xl shadow-sm space-y-2">
+        <div class="flex items-center space-x-2">
+          <span class="text-indigo-400 font-bold text-sm">💡 AI 수학 개념: 마스크 행렬과 아다마르 곱</span>
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">
+          가져올 부분은 $1$, 가져오지 않을 부분은 $0$인 <strong>마스크 행렬 $\mathbf{P}$</strong>와 모든 성분이 $1$인 <strong>행렬 $\mathbf{J}$</strong>에 대하여,
+          $$\mathbf{Z} = \mathbf{X} \odot \mathbf{P} + \mathbf{Y} \odot (\mathbf{J} - \mathbf{P})$$
+          연산은 $P_{i,j}=1$인 위치는 이미지 $\mathbf{X}$의 화소를 온전히 통과시키고($\mathbf{X} \times 1 + \mathbf{Y} \times 0 = \mathbf{X}$), $P_{i,j}=0$인 위치는 이미지 $\mathbf{Y}$의 화소를 통과시킵니다.
+          이는 인공지능 영상 합성(Image Inpainting, Matting) 및 포토샵 마스크 레이어의 수학적 기본 원리입니다.
+        </p>
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 2: Center] 5x5 Matrices of X, P, Y, J-P, and Result Z (5.5 Cols) -->
+    <section class="lg:col-span-5 flex flex-col space-y-3">
+      
+      <!-- Channel Selector Tabs -->
+      <div class="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
+          <button id="tab-btn-all" onclick="switchChannelView('all')" class="ch-tab-btn px-2.5 py-1 text-xs font-semibold rounded-lg bg-white shadow text-slate-900">RGB 3채널 전체</button>
+          <button id="tab-btn-r" onclick="switchChannelView('r')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-rose-600 hover:bg-white/60">Red ($\mathbf{R}$)</button>
+          <button id="tab-btn-g" onclick="switchChannelView('g')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-emerald-600 hover:bg-white/60">Green ($\mathbf{G}$)</button>
+          <button id="tab-btn-b" onclick="switchChannelView('b')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-sky-600 hover:bg-white/60">Blue ($\mathbf{B}$)</button>
+          <button id="tab-btn-mask" onclick="switchChannelView('mask')" class="ch-tab-btn px-2.5 py-1 text-xs font-medium rounded-lg text-indigo-600 hover:bg-white/60">마스크 ($\mathbf{P}$ & $\mathbf{J}-\mathbf{P}$)</button>
+        </div>
+
+        <div class="text-[11px] text-slate-400 font-medium">
+          크기: <span class="font-bold text-indigo-600">5 × 5 고정 실습</span>
+        </div>
+      </div>
+
+      <!-- Matrices Scroll Area -->
+      <div id="matrices-wrapper" class="space-y-4 flex-1 overflow-y-auto max-h-[calc(100vh-140px)] pr-1">
+        
+        <!-- RED CHANNEL BLOCK -->
+        <div id="block-channel-r" class="bg-white rounded-2xl border border-rose-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-rose-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-rose-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-rose-900">Red 채널 연산 : $\mathbf{Z}_R = \mathbf{X}_R \odot \mathbf{P} + \mathbf{Y}_R \odot (\mathbf{J} - \mathbf{P})$</h2>
+            </div>
+            <span class="text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">빨강 화소</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-center items-center">
+            <!-- Matrix X_R -->
+            <div class="bg-cyan-50/40 p-2 rounded-xl border border-cyan-100">
+              <div class="text-[11px] font-bold text-cyan-900 mb-1.5">$\mathbf{X}_R$ (이미지 X)</div>
+              <div id="grid-x-r" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix Y_R -->
+            <div class="bg-purple-50/40 p-2 rounded-xl border border-purple-100">
+              <div class="text-[11px] font-bold text-purple-900 mb-1.5">$\mathbf{Y}_R$ (이미지 Y)</div>
+              <div id="grid-y-r" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix Z_R -->
+            <div class="bg-rose-50/60 p-2 rounded-xl border border-rose-200">
+              <div class="text-[11px] font-bold text-rose-950 mb-1.5">$\mathbf{Z}_R$ (부분 합성 결과)</div>
+              <div id="grid-z-r" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GREEN CHANNEL BLOCK -->
+        <div id="block-channel-g" class="bg-white rounded-2xl border border-emerald-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-emerald-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-emerald-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-emerald-900">Green 채널 연산 : $\mathbf{Z}_G = \mathbf{X}_G \odot \mathbf{P} + \mathbf{Y}_G \odot (\mathbf{J} - \mathbf{P})$</h2>
+            </div>
+            <span class="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">초록 화소</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-center items-center">
+            <!-- Matrix X_G -->
+            <div class="bg-cyan-50/40 p-2 rounded-xl border border-cyan-100">
+              <div class="text-[11px] font-bold text-cyan-900 mb-1.5">$\mathbf{X}_G$ (이미지 X)</div>
+              <div id="grid-x-g" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix Y_G -->
+            <div class="bg-purple-50/40 p-2 rounded-xl border border-purple-100">
+              <div class="text-[11px] font-bold text-purple-900 mb-1.5">$\mathbf{Y}_G$ (이미지 Y)</div>
+              <div id="grid-y-g" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix Z_G -->
+            <div class="bg-emerald-50/60 p-2 rounded-xl border border-emerald-200">
+              <div class="text-[11px] font-bold text-emerald-950 mb-1.5">$\mathbf{Z}_G$ (부분 합성 결과)</div>
+              <div id="grid-z-g" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BLUE CHANNEL BLOCK -->
+        <div id="block-channel-b" class="bg-white rounded-2xl border border-sky-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-sky-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-sky-500 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-sky-900">Blue 채널 연산 : $\mathbf{Z}_B = \mathbf{X}_B \odot \mathbf{P} + \mathbf{Y}_B \odot (\mathbf{J} - \mathbf{P})$</h2>
+            </div>
+            <span class="text-[11px] font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded">파랑 화소</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-center items-center">
+            <!-- Matrix X_B -->
+            <div class="bg-cyan-50/40 p-2 rounded-xl border border-cyan-100">
+              <div class="text-[11px] font-bold text-cyan-900 mb-1.5">$\mathbf{X}_B$ (이미지 X)</div>
+              <div id="grid-x-b" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix Y_B -->
+            <div class="bg-purple-50/40 p-2 rounded-xl border border-purple-100">
+              <div class="text-[11px] font-bold text-purple-900 mb-1.5">$\mathbf{Y}_B$ (이미지 Y)</div>
+              <div id="grid-y-b" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix Z_B -->
+            <div class="bg-sky-50/60 p-2 rounded-xl border border-sky-200">
+              <div class="text-[11px] font-bold text-sky-950 mb-1.5">$\mathbf{Z}_B$ (부분 합성 결과)</div>
+              <div id="grid-z-b" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MASK P & J-P SPECIAL BLOCK -->
+        <div id="block-channel-mask" class="bg-white rounded-2xl border border-indigo-200 shadow-sm p-3.5 space-y-2.5">
+          <div class="flex items-center justify-between border-b border-indigo-100 pb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-indigo-600 shadow-sm"></span>
+              <h2 class="text-xs sm:text-sm font-bold text-indigo-900">마스크 행렬 비교 : $\mathbf{P}$ (선택) vs $\mathbf{J} - \mathbf{P}$ (여집합)</h2>
+            </div>
+            <span class="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">마스크 비교</span>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-center items-center">
+            <!-- Matrix P -->
+            <div class="bg-indigo-50/40 p-2.5 rounded-xl border border-indigo-200">
+              <div class="text-xs font-bold text-indigo-900 mb-2 flex items-center justify-center space-x-1.5">
+                <span>마스크 행렬 $\mathbf{P}$ ($X$ 선택)</span>
+                <span class="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block"></span>
+              </div>
+              <div id="grid-p-mask" class="inline-grid gap-1"></div>
+            </div>
+            <!-- Matrix J - P -->
+            <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+              <div class="text-xs font-bold text-slate-800 mb-2 flex items-center justify-center space-x-1.5">
+                <span>여마스크 행렬 $\mathbf{J} - \mathbf{P}$ ($Y$ 선택)</span>
+                <span class="w-2.5 h-2.5 rounded-full bg-slate-700 inline-block"></span>
+              </div>
+              <div id="grid-jp-mask" class="inline-grid gap-1"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- [COLUMN 3: Right] Multi-Canvas Composite Viewer & KaTeX Vector Formula Inspector (3.5 Cols) -->
+    <section class="lg:col-span-4 flex flex-col space-y-4">
+
+      <!-- Rendered Composite Display Card -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <div class="flex items-center space-x-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+            <h2 class="text-sm font-bold text-slate-800">부분 합성 결과 렌더링 뷰</h2>
+          </div>
+          <button onclick="exportAllMatricesCSV()" class="text-xs px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-medium rounded-lg border border-slate-200 shadow-sm transition">
+            📊 CSV 복사
+          </button>
+        </div>
+
+        <div class="p-4 flex flex-col items-center justify-center bg-slate-100/50 space-y-3">
+          
+          <!-- Large Main Composite Canvas (Z) -->
+          <div class="flex flex-col items-center bg-white p-3 rounded-2xl border-2 border-indigo-500 shadow-md w-full">
+            <div class="flex items-center justify-between w-full mb-1.5 px-2">
+              <span class="text-xs font-bold text-indigo-950">최종 합성 이미지 $\mathbf{Z}$</span>
+              <span id="badge-stat-composition" class="text-[10px] font-mono font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">X: 6칸 / Y: 19칸</span>
+            </div>
+            <canvas id="canvas-z" width="180" height="180" class="pixel-canvas rounded-xl w-[150px] h-[150px] sm:w-[170px] sm:h-[170px] border border-slate-200 cursor-pointer bg-white shadow-inner"></canvas>
+          </div>
+
+          <!-- Small Input Canvases & Mask Canvas (X, Y, P) -->
+          <div class="grid grid-cols-3 gap-2 w-full">
+            <!-- Canvas X -->
+            <div class="flex flex-col items-center bg-white p-1.5 rounded-xl border border-cyan-200 shadow-sm">
+              <span class="text-[10px] font-bold text-cyan-800 mb-1">이미지 $\mathbf{X}$</span>
+              <canvas id="canvas-x" width="80" height="80" class="pixel-canvas rounded-lg w-[65px] h-[65px] border border-slate-200 cursor-pointer bg-white"></canvas>
+            </div>
+
+            <!-- Canvas Mask P -->
+            <div class="flex flex-col items-center bg-white p-1.5 rounded-xl border border-indigo-300 shadow-sm">
+              <span class="text-[10px] font-bold text-indigo-800 mb-1">마스크 $\mathbf{P}$</span>
+              <canvas id="canvas-p" width="80" height="80" class="pixel-canvas rounded-lg w-[65px] h-[65px] border border-slate-200 cursor-pointer bg-white"></canvas>
+            </div>
+
+            <!-- Canvas Y -->
+            <div class="flex flex-col items-center bg-white p-1.5 rounded-xl border border-purple-200 shadow-sm">
+              <span class="text-[10px] font-bold text-purple-800 mb-1">이미지 $\mathbf{Y}$</span>
+              <canvas id="canvas-y" width="80" height="80" class="pixel-canvas rounded-lg w-[65px] h-[65px] border border-slate-200 cursor-pointer bg-white"></canvas>
+            </div>
+          </div>
+
+          <p class="text-[11px] text-slate-400 text-center leading-tight">💡 캔버스의 특정 화소를 클릭하면 해당 위치의 아다마르 곱 성분 합성 수식이 표시됩니다.</p>
+        </div>
+
+        <!-- Selected Pixel Interpolation Formula Inspector -->
+        <div class="p-4 border-t border-slate-100 bg-white">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-slate-700">선택 픽셀 부분 합성 벡터 수식</span>
+            <span id="selected-coord-text" class="text-xs font-semibold px-2 py-0.5 bg-slate-100 rounded text-slate-600">좌표 $(i=1, j=1)$</span>
+          </div>
+          <div id="pixel-math-formula" class="bg-slate-50 p-3 rounded-xl border border-slate-200 text-center text-xs sm:text-sm font-mono overflow-x-auto min-h-[95px] flex items-center justify-center">
+            <!-- KaTeX Formula dynamically injected -->
+          </div>
+        </div>
+
+        <!-- Mask Statistics -->
+        <div class="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px]">
+          <span class="text-slate-500 font-medium">선택된 화소 출처:</span>
+          <div class="flex items-center space-x-1.5 font-mono font-bold">
+            <span id="stat-selected-source" class="text-purple-900 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">이미지 Y 반영 ($P=0$)</span>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-100px] opacity-0 transition-all duration-300 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 flex items-center space-x-2 pointer-events-none">
+    <span id="toast-icon">✨</span>
+    <span id="toast-message">알림</span>
+  </div>
+
+  <script>
+    const GRID_SIZE = 5;
+    let selectedPixel = { r: 0, c: 0 };
+
+    // Image X: RGB 5x5 matrices (Values 0 ~ 255)
+    let matrixX_R = [];
+    let matrixX_G = [];
+    let matrixX_B = [];
+
+    // Image Y: RGB 5x5 matrices (Values 0 ~ 255)
+    let matrixY_R = [];
+    let matrixY_G = [];
+    let matrixY_B = [];
+
+    // Mask P: 5x5 binary matrix (0 or 1)
+    let matrixP = [];
+
+    // Result Z: RGB 5x5 matrices = X * P + Y * (J - P)
+    let matrixZ_R = [];
+    let matrixZ_G = [];
+    let matrixZ_B = [];
+
+    // Preset Data Generator
+    function getScenarioPresetData(name) {
+      const X_R = Array(5).fill(0).map(() => Array(5).fill(0));
+      const X_G = Array(5).fill(0).map(() => Array(5).fill(0));
+      const X_B = Array(5).fill(0).map(() => Array(5).fill(0));
+
+      const Y_R = Array(5).fill(0).map(() => Array(5).fill(0));
+      const Y_G = Array(5).fill(0).map(() => Array(5).fill(0));
+      const Y_B = Array(5).fill(0).map(() => Array(5).fill(0));
+
+      let P = Array(5).fill(0).map(() => Array(5).fill(0));
+
+      if (name === 'red-blue-solid') {
+        // Image X: All Pure Red (255, 0, 0)
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            X_R[r][c] = 255;
+            X_G[r][c] = 0;
+            X_B[r][c] = 0;
+          }
+        }
+
+        // Image Y: All Pure Blue (0, 0, 255)
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            Y_R[r][c] = 0;
+            Y_G[r][c] = 0;
+            Y_B[r][c] = 255;
+          }
+        }
+
+        // Mask P: Center 3x2 screen (TV/Window shape)
+        P = [
+          [0, 0, 0, 0, 0],
+          [0, 1, 1, 1, 0],
+          [0, 1, 1, 1, 0],
+          [0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0]
+        ];
+
+      } else if (name === 'tv-in-room') {
+        // Image X: Snow Mountain & Blue Sky (from textbook)
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (r <= 1) {
+              // Sky / Clouds
+              X_R[r][c] = 120 + c * 15;
+              X_G[r][c] = 160 + c * 10;
+              X_B[r][c] = 210 + c * 8;
+            } else if (r === 2) {
+              // Snowy mountain peak
+              X_R[r][c] = (c === 2) ? 245 : 200;
+              X_G[r][c] = (c === 2) ? 245 : 210;
+              X_B[r][c] = (c === 2) ? 255 : 230;
+            } else {
+              // Mountain base & asphalt road
+              X_R[r][c] = 90 - r * 10;
+              X_G[r][c] = 85 - r * 10;
+              X_B[r][c] = 95 - r * 10;
+            }
+          }
+        }
+
+        // Image Y: Warm Living Room & TV Wall
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (r >= 1 && r <= 2 && c >= 1 && c <= 3) {
+              // Black TV Screen Area in Room
+              Y_R[r][c] = 30; Y_G[r][c] = 30; Y_B[r][c] = 35;
+            } else if (r === 3 && c >= 1 && c <= 3) {
+              // TV Stand / Wood Cabinet
+              Y_R[r][c] = 210; Y_G[r][c] = 180; Y_B[r][c] = 140;
+            } else if (c === 0 && r >= 2) {
+              // Indoor Green Plant
+              Y_R[r][c] = 40; Y_G[r][c] = 130; Y_B[r][c] = 50;
+            } else {
+              // Warm beige wall
+              Y_R[r][c] = 238; Y_G[r][c] = 230; Y_B[r][c] = 215;
+            }
+          }
+        }
+
+        // Mask P: TV Screen (Row 1..2, Col 1..3) -> 6 pixels
+        P = [
+          [0, 0, 0, 0, 0],
+          [0, 1, 1, 1, 0],
+          [0, 1, 1, 1, 0],
+          [0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0]
+        ];
+
+      } else if (name === 'picture-frame') {
+        // Image X: Red Heart
+        const heart = [
+          [0, 1, 0, 1, 0],
+          [1, 1, 1, 1, 1],
+          [1, 1, 1, 1, 1],
+          [0, 1, 1, 1, 0],
+          [0, 0, 1, 0, 0]
+        ];
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (heart[r][c] === 1) {
+              X_R[r][c] = 230; X_G[r][c] = 40; X_B[r][c] = 80;
+            } else {
+              X_R[r][c] = 245; X_G[r][c] = 240; X_B[r][c] = 240;
+            }
+          }
+        }
+
+        // Image Y: Golden Picture Frame on Dark Wall
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (r === 0 || r === 4 || c === 0 || c === 4) {
+              Y_R[r][c] = 215; Y_G[r][c] = 165; Y_B[r][c] = 30; // Gold border
+            } else {
+              Y_R[r][c] = 40; Y_G[r][c] = 45; Y_B[r][c] = 60; // Dark inside
+            }
+          }
+        }
+
+        // Mask P: Inside frame (Row 1..3, Col 1..3)
+        P = [
+          [0, 0, 0, 0, 0],
+          [0, 1, 1, 1, 0],
+          [0, 1, 1, 1, 0],
+          [0, 1, 1, 1, 0],
+          [0, 0, 0, 0, 0]
+        ];
+
+      } else if (name === 'window-sunset') {
+        // Image X: Vibrant Sunset
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            X_R[r][c] = Math.max(30, 245 - r * 40);
+            X_G[r][c] = Math.max(20, 130 - r * 25 + c * 5);
+            X_B[r][c] = Math.min(220, 40 + r * 35);
+          }
+        }
+
+        // Image Y: Room with Window Grids
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            if (r === 2 || c === 2 || r === 0 || r === 4 || c === 0 || c === 4) {
+              Y_R[r][c] = 80; Y_G[r][c] = 60; Y_B[r][c] = 40; // Wood window cross frames
+            } else {
+              Y_R[r][c] = 220; Y_G[r][c] = 215; Y_B[r][c] = 205; // Wall
+            }
+          }
+        }
+
+        // Mask P: 4 Window Panes (1,1), (1,3), (3,1), (3,3)
+        P = [
+          [0, 0, 0, 0, 0],
+          [0, 1, 0, 1, 0],
+          [0, 0, 0, 0, 0],
+          [0, 1, 0, 1, 0],
+          [0, 0, 0, 0, 0]
+        ];
+      }
+
+      return { X: { R: X_R, G: X_G, B: X_B }, Y: { R: Y_R, G: Y_G, B: Y_B }, P };
+    }
+
+    function initData() {
+      const preset = getScenarioPresetData('red-blue-solid');
+      matrixX_R = preset.X.R;
+      matrixX_G = preset.X.G;
+      matrixX_B = preset.X.B;
+
+      matrixY_R = preset.Y.R;
+      matrixY_G = preset.Y.G;
+      matrixY_B = preset.Y.B;
+
+      matrixP = preset.P;
+
+      recalculateCompositeZ();
+    }
+
+    // Recalculate Composite Tensor Z = X * P + Y * (J - P)
+    function recalculateCompositeZ() {
+      matrixZ_R = Array(5).fill(0).map(() => Array(5).fill(0));
+      matrixZ_G = Array(5).fill(0).map(() => Array(5).fill(0));
+      matrixZ_B = Array(5).fill(0).map(() => Array(5).fill(0));
+
+      let pCount = 0;
+
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const p = matrixP[r][c] === 1 ? 1 : 0;
+          const jp = 1 - p; // (J - P)
+
+          if (p === 1) pCount++;
+
+          const zR = (matrixX_R[r][c] || 0) * p + (matrixY_R[r][c] || 0) * jp;
+          const zG = (matrixX_G[r][c] || 0) * p + (matrixY_G[r][c] || 0) * jp;
+          const zB = (matrixX_B[r][c] || 0) * p + (matrixY_B[r][c] || 0) * jp;
+
+          matrixZ_R[r][c] = Math.max(0, Math.min(255, Math.round(zR)));
+          matrixZ_G[r][c] = Math.max(0, Math.min(255, Math.round(zG)));
+          matrixZ_B[r][c] = Math.max(0, Math.min(255, Math.round(zB)));
+        }
+      }
+
+      // Update badge counts
+      const pct = Math.round((pCount / 25) * 100);
+      document.getElementById('badge-mask-p-count').innerHTML = `$P=1$: ${pCount}칸 (${pct}%)`;
+      document.getElementById('badge-stat-composition').innerText = `X: ${pCount}칸 / Y: ${25 - pCount}칸`;
+
+      if (window.renderMathInElement) {
+        renderMathInElement(document.getElementById('badge-mask-p-count'), {
+          delimiters: [{left: '$', right: '$', display: false}]
+        });
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initData();
+      renderInteractiveMaskPad();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      setupEventListeners();
+
+      if (window.renderMathInElement) {
+        renderMathInElement(document.body, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false}
+          ]
+        });
+      }
+    });
+
+    function setupEventListeners() {
+      const canvasX = document.getElementById('canvas-x');
+      const canvasY = document.getElementById('canvas-y');
+      const canvasP = document.getElementById('canvas-p');
+      const canvasZ = document.getElementById('canvas-z');
+
+      const handleCanvasClick = (canvas, e) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const col = Math.floor(((e.clientX - rect.left) * scaleX) / (canvas.width / 5));
+        const row = Math.floor(((e.clientY - rect.top) * scaleY) / (canvas.height / 5));
+
+        if (row >= 0 && row < 5 && col >= 0 && col < 5) {
+          selectedPixel = { r: row, c: col };
+          updateSelectedPixelInspector();
+          highlightSelectedCell();
+        }
+      };
+
+      canvasX.addEventListener('click', (e) => handleCanvasClick(canvasX, e));
+      canvasY.addEventListener('click', (e) => handleCanvasClick(canvasY, e));
+      canvasP.addEventListener('click', (e) => {
+        const rect = canvasP.getBoundingClientRect();
+        const scaleX = canvasP.width / rect.width;
+        const scaleY = canvasP.height / rect.height;
+        const col = Math.floor(((e.clientX - rect.left) * scaleX) / (canvasP.width / 5));
+        const row = Math.floor(((e.clientY - rect.top) * scaleY) / (canvasP.height / 5));
+
+        if (row >= 0 && row < 5 && col >= 0 && col < 5) {
+          toggleMaskCell(row, col);
+        }
+      });
+      canvasZ.addEventListener('click', (e) => handleCanvasClick(canvasZ, e));
+    }
+
+    function renderInteractiveMaskPad() {
+      const pad = document.getElementById('interactive-mask-pad');
+      let html = '';
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const isOne = matrixP[r][c] === 1;
+          html += `
+            <button onclick="toggleMaskCell(${r}, ${c})"
+                    id="pad-mask-${r}-${c}"
+                    class="mask-btn w-7 h-7 text-xs font-mono font-extrabold rounded-md flex items-center justify-center border ${isOne ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm' : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200'}">
+              ${isOne ? '1' : '0'}
+            </button>
+          `;
+        }
+      }
+      pad.innerHTML = html;
+    }
+
+    function toggleMaskCell(r, c) {
+      matrixP[r][c] = matrixP[r][c] === 1 ? 0 : 1;
+      selectedPixel = { r, c };
+
+      renderInteractiveMaskPad();
+      recalculateCompositeZ();
+      updateResultGridDOM();
+      updateMaskGridsDOM();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      highlightSelectedCell();
+    }
+
+    function applyMaskPattern(type) {
+      if (type === 'tv') {
+        matrixP = [
+          [0, 0, 0, 0, 0],
+          [0, 1, 1, 1, 0],
+          [0, 1, 1, 1, 0],
+          [0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0]
+        ];
+        showToast('📺 중앙 TV 화면(3×2) 마스크가 적용되었습니다.');
+      } else if (type === 'center') {
+        matrixP = [
+          [0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0],
+          [0, 0, 1, 0, 0],
+          [0, 0, 0, 0, 0],
+          [0, 0, 0, 0, 0]
+        ];
+        showToast('🎯 중앙 1점 마스크가 적용되었습니다.');
+      } else if (type === 'cross') {
+        matrixP = [
+          [0, 0, 1, 0, 0],
+          [0, 0, 1, 0, 0],
+          [1, 1, 1, 1, 1],
+          [0, 0, 1, 0, 0],
+          [0, 0, 1, 0, 0]
+        ];
+        showToast('➕ 십자형 마스크가 적용되었습니다.');
+      } else if (type === 'diag') {
+        matrixP = [
+          [1, 0, 0, 0, 0],
+          [0, 1, 0, 0, 0],
+          [0, 0, 1, 0, 0],
+          [0, 0, 0, 1, 0],
+          [0, 0, 0, 0, 1]
+        ];
+        showToast('📐 주대각선 마스크가 적용되었습니다.');
+      } else if (type === 'invert') {
+        for (let r = 0; r < 5; r++) {
+          for (let c = 0; c < 5; c++) {
+            matrixP[r][c] = matrixP[r][c] === 1 ? 0 : 1;
+          }
+        }
+        showToast('🔄 마스크가 반전(J - P)되었습니다.');
+      } else if (type === 'all-x') {
+        matrixP = Array(5).fill(0).map(() => Array(5).fill(1));
+        showToast('전체 이미지 X가 선택되었습니다 (P = J).');
+      }
+
+      renderInteractiveMaskPad();
+      recalculateCompositeZ();
+      updateResultGridDOM();
+      updateMaskGridsDOM();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      highlightSelectedCell();
+    }
+
+    function renderAllGrids() {
+      // Red Channel Grids
+      renderSingleGrid('grid-x-r', matrixX_R, 'x-r', 'cyan', false);
+      renderSingleGrid('grid-y-r', matrixY_R, 'y-r', 'purple', false);
+      renderSingleGrid('grid-z-r', matrixZ_R, 'z-r', 'rose', true);
+
+      // Green Channel Grids
+      renderSingleGrid('grid-x-g', matrixX_G, 'x-g', 'cyan', false);
+      renderSingleGrid('grid-y-g', matrixY_G, 'y-g', 'purple', false);
+      renderSingleGrid('grid-z-g', matrixZ_G, 'z-g', 'emerald', true);
+
+      // Blue Channel Grids
+      renderSingleGrid('grid-x-b', matrixX_B, 'x-b', 'cyan', false);
+      renderSingleGrid('grid-y-b', matrixY_B, 'y-b', 'purple', false);
+      renderSingleGrid('grid-z-b', matrixZ_B, 'z-b', 'sky', true);
+
+      // Mask Grids
+      renderMaskGrid('grid-p-mask', matrixP, 'p', 'indigo');
+      renderMaskGrid('grid-jp-mask', matrixP.map(row => row.map(v => 1 - v)), 'jp', 'slate');
+
+      highlightSelectedCell();
+    }
+
+    function renderSingleGrid(containerId, matrix, tag, colorClass, isReadonly) {
+      const container = document.getElementById(containerId);
+      let html = '';
+
+      for (let r = 0; r < 5; r++) {
+        html += `<div class="flex gap-1 justify-center">`;
+        for (let c = 0; c < 5; c++) {
+          const val = matrix[r][c];
+          html += `
+            <input type="number" value="${val}"
+                   id="cell-${tag}-${r}-${c}"
+                   data-tag="${tag}" data-r="${r}" data-c="${c}"
+                   ${isReadonly ? 'readonly tabindex="-1"' : ''}
+                   onfocus="onCellFocus(${r}, ${c})"
+                   oninput="onCellInput(event, '${tag}', ${r}, ${c})"
+                   class="matrix-input w-8 h-7 text-[11px] text-center font-mono font-bold rounded border border-slate-200 focus:outline-none focus:ring-2 focus:ring-${colorClass}-500 ${isReadonly ? 'bg-slate-900 text-white shadow-inner cursor-default' : (colorClass === 'cyan' ? 'bg-cyan-50/70 text-cyan-950' : (colorClass === 'purple' ? 'bg-purple-50/70 text-purple-950' : 'bg-slate-50 text-slate-800'))} transition-all">
+          `;
+        }
+        html += `</div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function renderMaskGrid(containerId, matrix, tag, colorClass) {
+      const container = document.getElementById(containerId);
+      let html = '';
+
+      for (let r = 0; r < 5; r++) {
+        html += `<div class="flex gap-1 justify-center">`;
+        for (let c = 0; c < 5; c++) {
+          const val = matrix[r][c];
+          html += `
+            <span id="cell-mask-${tag}-${r}-${c}"
+                  class="w-8 h-7 flex items-center justify-center font-mono text-xs font-extrabold rounded border ${val === 1 ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-slate-100 text-slate-400 border-slate-200'}">
+              ${val}
+            </span>
+          `;
+        }
+        html += `</div>`;
+      }
+      container.innerHTML = html;
+    }
+
+    function updateResultGridDOM() {
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const cellZR = document.getElementById(`cell-z-r-${r}-${c}`);
+          const cellZG = document.getElementById(`cell-z-g-${r}-${c}`);
+          const cellZB = document.getElementById(`cell-z-b-${r}-${c}`);
+          if (cellZR) cellZR.value = matrixZ_R[r][c];
+          if (cellZG) cellZG.value = matrixZ_G[r][c];
+          if (cellZB) cellZB.value = matrixZ_B[r][c];
+        }
+      }
+    }
+
+    function updateMaskGridsDOM() {
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const pVal = matrixP[r][c];
+          const jpVal = 1 - pVal;
+
+          const elP = document.getElementById(`cell-mask-p-${r}-${c}`);
+          if (elP) {
+            elP.innerText = pVal;
+            elP.className = `w-8 h-7 flex items-center justify-center font-mono text-xs font-extrabold rounded border ${pVal === 1 ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-slate-100 text-slate-400 border-slate-200'}`;
+          }
+
+          const elJP = document.getElementById(`cell-mask-jp-${r}-${c}`);
+          if (elJP) {
+            elJP.innerText = jpVal;
+            elJP.className = `w-8 h-7 flex items-center justify-center font-mono text-xs font-extrabold rounded border ${jpVal === 1 ? 'bg-slate-800 text-white border-slate-900' : 'bg-slate-100 text-slate-400 border-slate-200'}`;
+          }
+        }
+      }
+    }
+
+    function onCellFocus(r, c) {
+      selectedPixel = { r, c };
+      updateSelectedPixelInspector();
+      highlightSelectedCell();
+    }
+
+    function onCellInput(event, tag, r, c) {
+      let rawVal = event.target.value;
+      let val = parseInt(rawVal, 10);
+      if (isNaN(val)) val = 0;
+      val = Math.max(0, Math.min(255, val));
+      event.target.value = val;
+
+      if (tag === 'x-r') matrixX_R[r][c] = val;
+      if (tag === 'x-g') matrixX_G[r][c] = val;
+      if (tag === 'x-b') matrixX_B[r][c] = val;
+
+      if (tag === 'y-r') matrixY_R[r][c] = val;
+      if (tag === 'y-g') matrixY_G[r][c] = val;
+      if (tag === 'y-b') matrixY_B[r][c] = val;
+
+      recalculateCompositeZ();
+      updateResultGridDOM();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+    }
+
+    function highlightSelectedCell() {
+      document.querySelectorAll('.matrix-input').forEach(el => el.classList.remove('ring-2', 'ring-indigo-600', 'scale-105'));
+      const { r, c } = selectedPixel;
+      const tags = ['x-r', 'y-r', 'z-r', 'x-g', 'y-g', 'z-g', 'x-b', 'y-b', 'z-b'];
+      tags.forEach(tag => {
+        const el = document.getElementById(`cell-${tag}-${r}-${c}`);
+        if (el) {
+          el.classList.add('ring-2', 'ring-indigo-600', 'scale-105');
+        }
+      });
+    }
+
+    function updateAllCanvases() {
+      renderColorCanvas('canvas-x', matrixX_R, matrixX_G, matrixX_B, true);
+      renderColorCanvas('canvas-y', matrixY_R, matrixY_G, matrixY_B, false);
+      renderMaskCanvas('canvas-p', matrixP);
+      renderColorCanvas('canvas-z', matrixZ_R, matrixZ_G, matrixZ_B, false);
+    }
+
+    function renderColorCanvas(canvasId, matR, matG, matB, highlightMask = false) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      const width = canvas.width;
+      const height = canvas.height;
+      const cellW = width / 5;
+      const cellH = height / 5;
+
+      ctx.clearRect(0, 0, width, height);
+
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const red = matR[r][c] || 0;
+          const green = matG[r][c] || 0;
+          const blue = matB[r][c] || 0;
+
+          ctx.fillStyle = `rgb(${red}, ${green}, ${blue})`;
+          ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+
+          // Grid lines
+          ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+
+          // Highlight selection border for source X where P = 1
+          if (highlightMask && matrixP[r][c] === 1) {
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(c * cellW + 1, r * cellH + 1, cellW - 2, cellH - 2);
+          }
+        }
+      }
+    }
+
+    function renderMaskCanvas(canvasId, matP) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      const width = canvas.width;
+      const height = canvas.height;
+      const cellW = width / 5;
+      const cellH = height / 5;
+
+      ctx.clearRect(0, 0, width, height);
+
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          const isOne = matP[r][c] === 1;
+          ctx.fillStyle = isOne ? '#4f46e5' : '#f1f5f9'; // Indigo for 1, light slate for 0
+          ctx.fillRect(c * cellW, r * cellH, cellW, cellH);
+
+          // Grid lines
+          ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(c * cellW, r * cellH, cellW, cellH);
+        }
+      }
+    }
+
+    function updateSelectedPixelInspector() {
+      const { r, c } = selectedPixel;
+
+      const pVal = matrixP[r][c] === 1 ? 1 : 0;
+      const jpVal = 1 - pVal;
+
+      const xR = matrixX_R[r][c] || 0, xG = matrixX_G[r][c] || 0, xB = matrixX_B[r][c] || 0;
+      const yR = matrixY_R[r][c] || 0, yG = matrixY_G[r][c] || 0, yB = matrixY_B[r][c] || 0;
+      const zR = matrixZ_R[r][c] || 0, zG = matrixZ_G[r][c] || 0, zB = matrixZ_B[r][c] || 0;
+
+      // Update Left Sidebar Inspector
+      document.getElementById('selected-pixel-coords').innerText = `(${r + 1}, ${c + 1})`;
+      document.getElementById('inspector-p-val').innerText = `${pVal}`;
+      document.getElementById('inspector-jp-val').innerText = `${jpVal}`;
+
+      if (pVal === 1) {
+        document.getElementById('inspector-p-source').innerHTML = `<span class="text-cyan-600 font-bold">X 성분 채택</span>`;
+        document.getElementById('inspector-jp-source').innerHTML = `<span class="text-slate-400">Y 반영 안 됨</span>`;
+        document.getElementById('stat-selected-source').innerText = `이미지 X 반영 (P = 1)`;
+        document.getElementById('stat-selected-source').className = `text-cyan-900 bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200`;
+      } else {
+        document.getElementById('inspector-p-source').innerHTML = `<span class="text-slate-400">X 반영 안 됨</span>`;
+        document.getElementById('inspector-jp-source').innerHTML = `<span class="text-purple-600 font-bold">Y 성분 채택</span>`;
+        document.getElementById('stat-selected-source').innerText = `이미지 Y 반영 (P = 0)`;
+        document.getElementById('stat-selected-source').className = `text-purple-900 bg-purple-50 px-2 py-0.5 rounded border border-purple-200`;
+      }
+
+      // Update Right Inspector KaTeX Formula
+      const coordBadge = document.getElementById('selected-coord-text');
+      coordBadge.innerHTML = `좌표 $(i=${r + 1}, j=${c + 1})$`;
+
+      const formulaBox = document.getElementById('pixel-math-formula');
+
+      // LaTeX equation showing: Z = X * P + Y * (J - P)
+      formulaBox.innerHTML = `$$\\mathbf{Z}_{${r+1},${c+1}} = \\begin{bmatrix} ${xR} \\\\ ${xG} \\\\ ${xB} \\end{bmatrix} \\times (${pVal}) + \\begin{bmatrix} ${yR} \\\\ ${yG} \\\\ ${yB} \\end{bmatrix} \\times (${jpVal}) = \\begin{bmatrix} ${zR} \\\\ ${zG} \\\\ ${zB} \\end{bmatrix}$$`;
+
+      if (window.renderMathInElement) {
+        renderMathInElement(coordBadge, { delimiters: [{left: '$', right: '$', display: false}] });
+        renderMathInElement(formulaBox, { delimiters: [{left: '$$', right: '$$', display: true}] });
+      }
+    }
+
+    function loadScenarioPreset(name) {
+      const preset = getScenarioPresetData(name);
+      matrixX_R = preset.X.R;
+      matrixX_G = preset.X.G;
+      matrixX_B = preset.X.B;
+
+      matrixY_R = preset.Y.R;
+      matrixY_G = preset.Y.G;
+      matrixY_B = preset.Y.B;
+
+      matrixP = preset.P;
+
+      renderInteractiveMaskPad();
+      recalculateCompositeZ();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      showToast('새로운 이미지 부분 합성 시나리오를 불러왔습니다.');
+    }
+
+    function resetAll() {
+      for (let r = 0; r < 5; r++) {
+        for (let c = 0; c < 5; c++) {
+          matrixX_R[r][c] = 0; matrixX_G[r][c] = 0; matrixX_B[r][c] = 0;
+          matrixY_R[r][c] = 0; matrixY_G[r][c] = 0; matrixY_B[r][c] = 0;
+          matrixP[r][c] = 0;
+        }
+      }
+      renderInteractiveMaskPad();
+      recalculateCompositeZ();
+      renderAllGrids();
+      updateAllCanvases();
+      updateSelectedPixelInspector();
+      showToast('모든 행렬과 마스크 데이터가 0으로 초기화되었습니다.');
+    }
+
+    function switchChannelView(view) {
+      const blockR = document.getElementById('block-channel-r');
+      const blockG = document.getElementById('block-channel-g');
+      const blockB = document.getElementById('block-channel-b');
+      const blockMask = document.getElementById('block-channel-mask');
+
+      document.querySelectorAll('.ch-tab-btn').forEach(btn => {
+        btn.classList.remove('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+        btn.classList.add('text-slate-600');
+      });
+
+      if (view === 'all') {
+        blockR.classList.remove('hidden');
+        blockG.classList.remove('hidden');
+        blockB.classList.remove('hidden');
+        blockMask.classList.remove('hidden');
+        document.getElementById('tab-btn-all').classList.add('bg-white', 'shadow', 'text-slate-900', 'font-semibold');
+      } else if (view === 'r') {
+        blockR.classList.remove('hidden');
+        blockG.classList.add('hidden');
+        blockB.classList.add('hidden');
+        blockMask.classList.add('hidden');
+        document.getElementById('tab-btn-r').classList.add('bg-white', 'shadow', 'text-rose-600', 'font-semibold');
+      } else if (view === 'g') {
+        blockR.classList.add('hidden');
+        blockG.classList.remove('hidden');
+        blockB.classList.add('hidden');
+        blockMask.classList.add('hidden');
+        document.getElementById('tab-btn-g').classList.add('bg-white', 'shadow', 'text-emerald-600', 'font-semibold');
+      } else if (view === 'b') {
+        blockR.classList.add('hidden');
+        blockG.classList.add('hidden');
+        blockB.classList.remove('hidden');
+        blockMask.classList.add('hidden');
+        document.getElementById('tab-btn-b').classList.add('bg-white', 'shadow', 'text-sky-600', 'font-semibold');
+      } else if (view === 'mask') {
+        blockR.classList.add('hidden');
+        blockG.classList.add('hidden');
+        blockB.classList.add('hidden');
+        blockMask.classList.remove('hidden');
+        document.getElementById('tab-btn-mask').classList.add('bg-white', 'shadow', 'text-indigo-600', 'font-semibold');
+      }
+    }
+
+    function exportAllMatricesCSV() {
+      let csv = `=== Mask Matrix P (1: Image X, 0: Image Y) ===\n`;
+      csv += matrixP.map(row => row.join(',')).join('\n') + `\n\n`;
+
+      csv += `=== Image X RGB Tensor 5x5x3 ===\n`;
+      csv += `[X_R]\n` + matrixX_R.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[X_G]\n` + matrixX_G.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[X_B]\n` + matrixX_B.map(row => row.join(',')).join('\n') + `\n\n`;
+
+      csv += `=== Image Y RGB Tensor 5x5x3 ===\n`;
+      csv += `[Y_R]\n` + matrixY_R.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Y_G]\n` + matrixY_G.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Y_B]\n` + matrixY_B.map(row => row.join(',')).join('\n') + `\n\n`;
+
+      csv += `=== Composite Image Z = X*P + Y*(J - P) ===\n`;
+      csv += `[Z_R]\n` + matrixZ_R.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Z_G]\n` + matrixZ_G.map(row => row.join(',')).join('\n') + `\n\n`;
+      csv += `[Z_B]\n` + matrixZ_B.map(row => row.join(',')).join('\n') + `\n`;
+
+      const tempTextArea = document.createElement('textarea');
+      tempTextArea.value = csv;
+      document.body.appendChild(tempTextArea);
+      tempTextArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempTextArea);
+
+      showToast('📋 전체 X, Y, 마스크(P), 합성(Z) CSV 데이터가 복사되었습니다.');
+    }
+
+    function showToast(msg, icon = '✨') {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-icon').innerText = icon;
+      document.getElementById('toast-message').innerText = msg;
+      
+      toast.classList.remove('opacity-0', 'translate-y-[-100px]');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', 'translate-y-[-100px]');
+      }, 2400);
+    }
+  </script>
+</body>
+</html>
