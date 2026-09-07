@@ -17,3 +17,5 @@
   https://eggplan-choi.github.io/math-lab/image_fade.html
 7. 이미지 일부 합성
   https://eggplan-choi.github.io/math-lab/partial-image-merge.html
+8. 이미지 대칭 변환
+  https://eggplan-choi.github.io/math-lab/image-flip-transform.html
